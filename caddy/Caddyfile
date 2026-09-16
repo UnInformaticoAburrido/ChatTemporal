@@ -1,0 +1,13 @@
+{
+	http_port 8080
+	https_port 8443
+	# Sustituir antes de producción; configuración pública, nunca secretos.
+	email operaciones@example.invalid
+	admin 127.0.0.1:2019
+	import /etc/caddy/logging.caddy
+}
+
+chat.example.invalid {
+	header Strict-Transport-Security "max-age=31536000"
+	import /etc/caddy/routes.caddy
+}

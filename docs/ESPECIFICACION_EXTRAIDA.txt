@@ -1,0 +1,1977 @@
+
+
+Especificación maestra
+del servidor de chat
+Arquitectura, API, E2EE, PostgreSQL, Redis, WebSocket, invitaciones, votaciones y recuperación
+Versión consolidada de producción v1 · Especificación normativa para implementación, pruebas y operación
+Estado: ESPECIFICACIÓN DE PRODUCCIÓN v1. Este documento sustituye las versiones anteriores y cierra las decisiones de arquitectura, autenticación, contratos REST/WebSocket, consistencia, configuración, pruebas, despliegue, observabilidad y operación del MVP.
+
+
+1. Objetivo y alcance
+Definir de forma única e implementable un servicio de chat independiente que pueda integrarse con la aplicación principal. El servidor gestiona identidad, sesiones, conversaciones, invitaciones, entrega en tiempo real, persistencia opcional de ciphertext, metadatos técnicos, votaciones y recuperación de claves entre dispositivos.
+MVP: conversaciones 1 a 1, con modelo de datos preparado para grupos futuros.
+Transporte: WebSocket para todos los mensajes, ACK y eventos de entrega.
+Gestión: REST para cuenta, sesiones, conversaciones, invitaciones, historial persistente, votaciones, Web Push y transferencia temporal de claves.
+Cifrado: extremo a extremo. El servidor no necesita descifrar el contenido.
+Modos: stored/persistente hasta 30 días y ephemeral/efímero sin historial de contenido en servidor.
+Sin contraseñas: la cuenta usa sesiones/tokens y una frase de recuperación BIP-39 de 24 palabras como mecanismo de recuperación.
+2. Decisiones funcionales cerradas
+Decisión
+Definición final
+Entrada
+Desde la aplicación principal mediante token temporal firmado, o desde un flujo de invitación/registro. No existe contraseña de chat.
+Access token
+24 horas.
+Refresh token
+30 días, rotado en cada uso.
+Recuperación de cuenta
+Frase BIP-39 de 24 palabras; solo se conserva su hash Argon2id.
+Mensajería
+Exclusivamente WebSocket.
+Web Push
+Sí; notificación genérica sin contenido del mensaje.
+Persistent/stored
+Ciphertext almacenado en PostgreSQL como máximo 30 días. Una vez stored, no puede volver a ephemeral.
+Ephemeral
+El ciphertext permanece en el cliente hasta completar el handshake message.offer → message.ready. Solo entonces se envía por WebSocket y existe temporalmente en Redis/RAM hasta ACK. La espera de offer es de 60 segundos configurable. Puede actualizarse a stored; solo se persisten mensajes posteriores al cambio.
+Invitación
+Una identidad de invitación activa por usuario genera dos códigos permanentes: ephemeral y stored. Solo cambian cuando el usuario regenera la invitación.
+Mensajes de gracia
+Máximo 5 antes de aceptar la conversación.
+Votación de gracia
+Se abre al aceptar el chat, bloquea la conversación durante 30 segundos y usa majority_absolute. La falta de voto al vencer el plazo cuenta como NO.
+Adjuntos
+Fuera de alcance. Solo texto.
+Longitud
+256 caracteres por defecto, configurable.
+Multi-dispositivo
+No como uso normal del MVP; solo coexistencia temporal para transferencia de claves.
+Cifrado E2EE
+libsodium con un único par Curve25519/X25519 por usuario; el servidor conserva solo la clave pública vigente. Cada mensaje usa nonce único y crypto_meta incluye nonce + clave pública del emisor; protocol_version se conserva explícitamente.
+Cambio de modo
+ephemeral → stored permitido únicamente por el host/huésped (creador del código). stored → ephemeral prohibido. El resto de participantes puede abandonar tras el cambio.
+Roles de conversación
+host/huésped: creador y propietario del código de invitación; recibe la solicitud, acepta el chat y posee acciones privilegiadas. guest/invitado: usuario que canjea el código e inicia el contacto. En código se usan los nombres host y guest para evitar ambigüedad.
+Idempotencia
+message_id identifica de forma única el mensaje lógico. Repetir el mismo message_id nunca crea un segundo mensaje ni un segundo registro.
+JWT de acceso
+Ed25519/EdDSA, kid, claims sub/sid/iss/aud/iat/nbf/exp/jti y revocación inmediata por sid.
+Bootstrap
+Ed25519 distinto al Chat JWT, TTL ≤5 min y jti de un solo uso en Redis.
+Argon2id
+64 MiB, time_cost 3, parallelism 1, salt 16 bytes, hash 32 bytes.
+Versionado API
+REST /api/v1 y WebSocket /ws/v1.
+WebSocket auth
+Ticket one-time de 30 s obtenido por REST; no JWT en la URL.
+3. Arquitectura
+Cliente web / app
+    │
+    ├── REST ───────────────► Caddy :443 ─► FastAPI
+    │                                   ├── PostgreSQL
+    │                                   ├── Redis (sin persistencia)
+    │                                   └── Web Push
+    │
+    └── WebSocket ──────────► Caddy :443 ─► FastAPI ─► Redis Pub/Sub / entrega
+Componente
+Responsabilidad
+FastAPI
+REST, autenticación de peticiones, WebSocket, conversaciones, invitaciones, votaciones y coordinación.
+PostgreSQL
+Datos persistentes: usuarios, sesiones, claves públicas, conversaciones, invitaciones, ciphertext stored, metadatos de contacto, votaciones y suscripciones Web Push.
+Redis
+Presencia, conexiones WebSocket, Pub/Sub, ciphertext efímero en tránsito y blobs cifrados de transferencia de claves con TTL.
+Caddy
+Reverse proxy y HTTPS.
+Cliente
+Cifrado/descifrado E2EE, almacenamiento local de claves privadas e historial local.
+4. Identidad, registro y sesiones
+4.1 Usuario
+Campo
+Definición
+id
+UUID interno.
+nick
+Único y público.
+email
+Único y privado.
+memory_hash
+Hash Argon2id de la frase de recuperación BIP-39 de 24 palabras.
+email_verified
+Estado de verificación.
+is_active
+Cuenta activa/inactiva.
+No existe password_hash ni autenticación basada en contraseña.
+4.2 Frase de recuperación BIP-39 de 24 palabras
+1.  Al crear la cuenta se genera una frase BIP-39 de 24 palabras (256 bits de entropía antes del checksum) mediante una fuente criptográficamente segura.
+2.  La frase se muestra al usuario una sola vez.
+3.  El servidor conserva únicamente memory_hash usando Argon2id; nunca conserva la frase original.
+4.  La recuperación verifica email + frase, revoca las sesiones anteriores y emite nuevas credenciales.
+4.3 Entrada desde la aplicación principal
+La aplicación principal puede emitir un token temporal firmado para abrir el chat sin un segundo login. El Chat API verifica firma, audiencia, expiración y usuario; después emite su propia sesión.
+Aplicación principal
+  └─ bootstrap token firmado (corto, recomendado ≤ 5 min)
+        ↓
+POST /auth/exchange
+        ↓
+Chat API
+  ├─ access token: 24 h
+  └─ refresh token: 30 días, rotación en cada uso
+4.4 Flujo desde invitación
+Un usuario que llega mediante un código de invitación puede completar el registro si todavía no tiene cuenta. Tras el registro/verificación recibe una sesión normal y continúa con el flujo de invitación.
+5. Cifrado extremo a extremo y claves
+El requisito funcional es: A cifra localmente, el servidor transporta o conserva ciphertext, B descifra localmente. Las claves privadas permanecen bajo control de los clientes.
+Usuario A
+  └─ cifra localmente
+        ↓
+Servidor: solo ciphertext
+        ↓
+Usuario B
+  └─ descifra localmente
+Protocolo E2EE del MVP: libsodium con un único par de claves Curve25519/X25519 por usuario. El cliente cifra y descifra localmente mediante crypto_box_easy/crypto_box_open_easy. Cada mensaje usa un nonce aleatorio único de 24 bytes. El formato lógico de metadatos criptográficos es: protocol_version + nonce + sender_public_key. En la API protocol_version viaja como entero; crypto_meta es un blob binario obligatorio de 56 bytes: nonce[24] || sender_public_key[32], transportado como Base64URL. PostgreSQL conserva únicamente la clave pública vigente. La clave privada permanece en el cliente; durante un cambio de dispositivo solo se sube un blob ya cifrado con TTL máximo de 24 horas y el secreto viaja por QR. El servidor no necesita interpretar el ciphertext para entregarlo.
+5.1 Claves públicas
+El servidor almacena una única clave pública vigente por usuario, necesaria para que otros clientes puedan cifrar mensajes destinados a él.
+La clave privada no se almacena de forma permanente en PostgreSQL ni en ningún almacenamiento durable del servidor.
+user_keys contiene una sola fila por usuario. Rotar la clave sustituye la clave pública vigente; las claves privadas antiguas que el usuario quiera conservar son responsabilidad del cliente.
+5.2 Transferencia temporal de claves entre dispositivos
+Cuando el usuario cambia de dispositivo puede transferir su bundle privado usando ambos dispositivos simultáneamente. El servidor solo conserva un blob ya cifrado y nunca recibe el secreto de descifrado.
+1.  El dispositivo nuevo inicia una transferencia y obtiene transfer_id.
+2.  El dispositivo antiguo genera un secreto aleatorio de transferencia y cifra localmente el bundle de claves.
+3.  El blob cifrado se sube al servidor asociado a transfer_id.
+4.  El secreto se transmite directamente al dispositivo nuevo mediante QR.
+5.  El QR puede incluir transfer_id, secret y protocol_version. El secret no se envía al servidor.
+6.  El dispositivo nuevo descarga el blob, lo descifra localmente y confirma la transferencia.
+7.  El servidor elimina el blob tras confirmación o automáticamente al cumplirse 24 horas.
+Dispositivo viejo ── blob cifrado ──► Servidor (TTL 24 h)
+      │                                  │
+      └──── QR: secreto ───────────────► Dispositivo nuevo
+                                         │
+                               descarga + descifra localmente
+5.3 Recuperación del historial desde el otro participante
+Si A pierde dispositivo/claves locales pero B conserva su historial local, B puede reenviar a A una copia ordenada de la conversación, cifrada de nuevo para las nuevas claves de A. Este proceso no requiere que el servidor conozca el contenido. Se transporta como un flujo de recuperación efímero por WebSocket para evitar crear duplicados persistentes.
+B descifra localmente su copia histórica.
+B vuelve a cifrar cada elemento para las nuevas claves de A.
+B conserva el orden original y, opcionalmente, marcas temporales originales dentro del payload cifrado.
+El servidor solo retransmite frames recovery.replay.* y no los incorpora a messages.
+Si ambos participantes pierden sus dispositivos/claves y no existe una copia recuperable, el historial queda perdido definitivamente.
+6. Modos de conversación
+6.1 Modo stored / persistente
+1.  A cifra el mensaje localmente y lo envía por WebSocket.
+2.  FastAPI registra metadatos de contacto y almacena el ciphertext en PostgreSQL.
+3.  El receptor puede recuperar el ciphertext durante el periodo de conservación.
+4.  Cada ciphertext expira como máximo 30 días después de sent_at.
+5.  El receptor envía ACK por WebSocket; el estado de entrega se actualiza.
+6.2 Modo ephemeral / efímero
+1.  A cifra el mensaje localmente y mantiene el ciphertext exclusivamente en su dispositivo; todavía no lo envía al servidor.
+2.  A envía message.offer al servidor con message_id y metadatos mínimos, pero sin ciphertext. El servidor crea una oferta temporal con EPHEMERAL_OFFER_TIMEOUT_SECONDS=60 por defecto.
+3.  El servidor comunica message.offer a B. Si B no está conectado, puede enviar Web Push genérico para que se conecte. Si B no responde dentro de 60 segundos, la oferta expira y A recibe message.failed.
+4.  Cuando B está preparado, responde message.ready al servidor; el servidor retransmite message.ready a A. Solo a partir de ese momento A puede enviar el ciphertext.
+5.  A envía message.send con el mismo message_id. El servidor guarda el ciphertext únicamente en Redis/RAM durante la entrega y lo reenvía a B como message.new.
+6.  B envía message.ack únicamente después de recibir el ciphertext completo. El servidor elimina primero el ciphertext temporal y después notifica a A mediante message.delivered.
+7.  Si B se desconecta durante la entrega antes del ACK, el servidor elimina el ciphertext y envía message.failed a A. El modo ephemeral no deja historial de contenido en el servidor; para reintentar tras un fallo definitivo el cliente crea un nuevo message_id.
+6.3 Cambio de ephemeral a stored
+El modo inicial lo determina el código que utiliza el guest para contactar con el host: el host dispone de una variante ephemeral y otra stored de su invitación.
+Una conversación ephemeral puede convertirse a stored únicamente por el host/huésped, es decir, el usuario creador del código de invitación. Una conversación stored no puede volver a ephemeral.
+El cambio a stored es efectivo desde el momento de la actualización. Solo los mensajes enviados después del cambio se almacenan en PostgreSQL; el historial efímero anterior permanece únicamente en los clientes.
+Al producirse el cambio, los demás participantes reciben conversation.mode_changed y pueden continuar o abandonar la conversación. Si abandonan, pueden eliminar su copia local del chat.
+Metadatos: Aunque el contenido efímero no persiste, se mantiene durante 30 días el registro técnico mínimo de contacto definido en message_events/message_deliveries.
+7. Invitaciones y apertura de conversaciones
+Cada usuario dispone de una identidad de invitación activa y permanente. A partir de ella el servidor genera dos códigos: uno para iniciar chats ephemeral y otro para iniciar chats stored. Ambos permanecen válidos hasta que el usuario pulsa “Regenerar código”.
+Roles del MVP: host (huésped) es el creador/propietario del código y receptor de la solicitud; guest (invitado) es el usuario que canjea el código para iniciar el contacto. Solo el host puede aceptar una conversación pending y ejecutar el cambio irreversible ephemeral → stored. Cualquier participante puede cerrar o abandonar según las reglas generales.
+1.  invitation_id es un UUID aleatorio generado mediante CSPRNG y no contiene información derivable del user_id. PostgreSQL mantiene la relación invitation_id → creator_user_id.
+2.  El payload binario tiene formato fijo y todos los enteros multibyte se codifican big-endian: version:uint8 (1 byte) || invitation_id:UUID (16 bytes, orden de red) || generation:uint32 (4 bytes) || created_at:uint64 (8 bytes, Unix epoch en segundos UTC) || mode:uint8 (1 byte; 0 = ephemeral, 1 = stored). El payload ocupa 30 bytes y no contiene user_id ni nick.
+3.  El servidor calcula HMAC-SHA-256(INVITATION_HMAC_SECRET, payload), concatena payload || MAC[32] y codifica los 62 bytes resultantes como Base64URL sin padding. El código resultante tiene 83 caracteres. No se usa bit de paridad ni conversión directa de bytes a caracteres UTF-8.
+4.  Al canjear un código, el servidor decodifica Base64URL, verifica el HMAC en tiempo constante, valida invitation_id/generation/status y crea una conversación pending con el mode incluido en el código.
+5.  Antes de que el host acepte, el guest conoce únicamente la identidad técnica de invitación; no ve el nick ni información pública del host. El host sí sabe que existe una solicitud asociada a su código y decide si acepta la conversación.
+6.  Se permiten hasta 5 mensajes de gracia. Tras alcanzar el límite no se pueden enviar más mensajes hasta que el host acepte la conversación.
+7.  Regenerar revoca la identidad de invitación activa y crea una nueva generation/invitation_id; todos los códigos anteriores dejan de ser válidos. Cada 6 meses el cliente muestra un recordatorio opcional para recomendar la regeneración, sin hacerlo automáticamente.
+8. Mensajes de gracia y votación genérica
+La lógica de votación debe ser reutilizable en grupos futuros. La primera política implementada es majority_absolute.
+approved ⇔ yes_votes > eligible_members / 2
+Miembros con voto
+Sí necesarios
+2
+2
+3
+2
+5
+3
+10
+6
+La votación retain_grace_messages se abre automáticamente cuando el host acepta la conversación y dura exactamente 30 segundos.
+eligible_members se congela al abrir la votación y votes.expires_at = created_at + 30 segundos.
+Mientras la votación está abierta, la interfaz de conversación queda bloqueada y el servidor rechaza nuevos message.offer y message.send para esa conversación.
+Cada usuario con derecho a voto puede emitir como máximo un voto. Al cumplirse el plazo, cualquier usuario que no haya votado se computa implícitamente como NO.
+Al cerrar la votación se aplica majority_absolute: approved si yes_votes > eligible_members / 2; en caso contrario rejected. En stored el resultado conserva o elimina los mensajes de gracia; en ephemeral se comunica a los clientes para que lo apliquen localmente.
+9. Cierre y reapertura
+Cualquier participante puede cerrar unilateralmente la conversación.
+El cierre bloquea de inmediato nuevos message.offer y message.send.
+El otro participante puede conservar o eliminar su historial local.
+Una conversación closed no se reactiva.
+Para volver a contactar se vuelve a introducir un código de invitación válido y se crea un nuevo flujo pending.
+10. Protocolo WebSocket
+Los mensajes, ACK y recuperación entre participantes viajan exclusivamente por WebSocket. REST no se utiliza para enviar mensajes de chat. Todos los eventos usan un envelope JSON genérico con type, request_id, conversation_id, timestamp y payload.
+Evento
+Dirección
+Función
+message.offer
+A → servidor → B
+Iniciar intento ephemeral sin enviar ciphertext; el servidor mantiene solo metadata temporal hasta 60 s.
+message.ready
+B → servidor → A
+Confirmar que B está conectado y preparado para recibir el ciphertext ephemeral.
+message.send
+cliente → servidor
+Enviar ciphertext. En stored se usa directamente; en ephemeral solo después de message.ready.
+message.new
+servidor → receptor
+Entregar ciphertext completo al receptor.
+message.ack
+receptor → servidor
+Confirmar recepción.
+message.delivered
+servidor → emisor
+Confirmar al emisor el ACK.
+message.failed
+servidor → emisor
+Fallo definitivo: offer expirado, desconexión durante entrega, conversación cerrada, límite u otra validación.
+conversation.closed
+servidor → participantes
+Notificar cierre.
+vote.opened
+servidor → participantes
+Votación creada.
+vote.updated
+servidor → participantes
+Estado/resultados de votación.
+recovery.replay.begin
+cliente → servidor → peer
+Inicio de reenvío histórico.
+recovery.replay.item
+cliente → servidor → peer
+Elemento histórico recifrado.
+recovery.replay.end
+cliente → servidor → peer
+Fin de reenvío histórico.
+conversation.mode_changed
+servidor → participantes
+Notificar cambio irreversible ephemeral → stored.
+system.error
+servidor → cliente
+Error estándar correlacionado con request_id cuando proceda.
+10.1 Handshake de entrega ephemeral
+A mantiene ciphertext localmente
+  ↓ message.offer (sin ciphertext)
+Servidor mantiene oferta temporal ≤ 60 s
+  ↓ message.offer / Web Push genérico
+B
+  ↓ message.ready
+Servidor
+  ↓ message.ready
+A
+  ↓ message.send (ciphertext)
+Servidor → Redis/RAM → B
+  ↓ recepción completa
+B → message.ack → Servidor
+  ↓ DEL ciphertext
+Servidor → message.delivered → A
+
+Timeout de offer o desconexión de B antes del ACK:
+message.failed → A; el ciphertext se elimina o nunca llega a salir de A.
+EPHEMERAL_OFFER_TIMEOUT_SECONDS tiene valor inicial 60 y debe ser configurable. La oferta no crea message_events: el registro técnico del mensaje comienza cuando el servidor recibe el message.send real después de message.ready.
+10.2 Envelope genérico y ejemplo de message.send
+{
+  "type": "message.send",
+  "request_id": "uuid",
+  "conversation_id": "uuid",
+  "timestamp": "2026-09-15T15:00:00Z",
+  "payload": {
+    "message_id": "uuid",
+    "protocol_version": 1,
+    "ciphertext": "base64url-ciphertext",
+    "crypto_meta": "base64url(nonce[24] || sender_public_key[32])"
+  }
+}
+El cliente aplica MAX_MESSAGE_LENGTH sobre el texto antes de cifrar. Como el servidor no puede inspeccionar el contenido, valida identidad, pertenencia, estado, límites de gracia y un tamaño máximo configurable del envelope/ciphertext en bytes.
+10.3 ACK usando el mismo envelope
+{
+  "type": "message.ack",
+  "request_id": "uuid",
+  "conversation_id": "uuid",
+  "timestamp": "2026-09-15T15:00:02Z",
+  "payload": {
+    "message_id": "uuid"
+  }
+}
+10.4 Idempotencia y reintentos
+message_id es generado por el cliente y representa un único mensaje lógico. El servidor lo trata como clave idempotente global: recibir de nuevo el mismo message_id no crea otra fila, no incrementa de nuevo grace_messages_used y no genera una segunda entrega independiente. Si el mensaje ya está pending, delivered o failed, el servidor devuelve/notifica su estado actual. Si llega el mismo message_id con conversation_id, sender o contenido criptográfico incompatibles, responde system.error con MESSAGE_ID_CONFLICT. Tras un fallo definitivo, un reintento funcional debe usar un nuevo message_id.
+11. API REST
+Método
+Endpoint
+Función
+POST
+/users/register
+Registrar nick + email y crear frase de recuperación.
+GET
+/users/me
+Datos privados de la cuenta.
+PATCH
+/users/me
+Modificar datos editables.
+DELETE
+/users/me
+Eliminar/desactivar cuenta.
+GET
+/users/{user_id}
+Perfil público: UUID + nick.
+POST
+/auth/exchange
+Intercambiar bootstrap token de la app principal por sesión de chat.
+POST
+/auth/recover
+Recuperar cuenta con email + 24 palabras BIP-39; revocar sesiones previas.
+POST
+/auth/refresh
+Rotar refresh token y emitir nueva sesión.
+POST
+/auth/logout
+Revocar sesión.
+POST
+/users/verify-email
+Verificar email.
+POST
+/users/resend-verification
+Reenviar verificación.
+PUT
+/users/me/keys
+Registrar o sustituir la única clave pública vigente del usuario.
+GET
+/users/{user_id}/keys
+Obtener la clave pública vigente necesaria para cifrar.
+POST
+/users/me/keys/rotate
+Rotar/sustituir la clave pública vigente.
+POST
+/key-transfers
+Crear transferencia temporal; devuelve transfer_id.
+PUT
+/key-transfers/{transfer_id}
+Subir blob de claves ya cifrado.
+GET
+/key-transfers/{transfer_id}
+Descargar blob cifrado.
+DELETE
+/key-transfers/{transfer_id}
+Cancelar/borrar transferencia.
+POST
+/invitations/regenerate
+Revocar invitation_id/generation actual y crear una nueva identidad de invitación; invalida ambos códigos anteriores.
+POST
+/invitations/redeem
+Canjear código Base64URL firmado como guest/invitado; el mode se obtiene del código y se crea conversación pending dirigida al host.
+GET
+/conversations
+Listar conversaciones del usuario.
+GET
+/conversations/{id}
+Metadatos de conversación.
+POST
+/conversations/{id}/accept
+Aceptar conversación pending. Solo el host/huésped (creador del código) puede ejecutarlo; activa el chat y abre la votación de gracia.
+DELETE
+/conversations/{id}
+Cerrar conversación unilateralmente.
+GET
+/conversations/{id}/messages
+Recuperar ciphertext stored aún no expirado.
+GET
+/messages/{id}/status
+Consultar metadato/estado mientras exista.
+POST
+/votes/{id}/ballots
+Emitir voto.
+GET
+/votes/{id}
+Consultar votación.
+POST
+/push/subscriptions
+Registrar suscripción Web Push.
+DELETE
+/push/subscriptions/{id}
+Eliminar suscripción Web Push.
+GET
+/invitations/me
+Obtener las dos variantes vigentes del código propio: ephemeral y stored.
+POST
+/conversations/{id}/upgrade
+Cambiar irreversible de ephemeral a stored. Solo el host/huésped puede ejecutarlo; afecta únicamente a mensajes posteriores y notifica al resto.
+POST
+/conversations/{id}/leave
+Abandonar conversación. En 1 a 1 impide continuar el intercambio con ese participante.
+12. Web Push
+Web Push es el canal inicial de notificaciones. En stored se dispara cuando el servidor acepta un nuevo message.send destinado al usuario. En ephemeral puede dispararse al recibir message.offer si B no está conectado, para darle la oportunidad de conectarse y responder dentro del timeout de 60 segundos.
+El payload es genérico y no contiene el texto ni el ciphertext del chat. Puede incluir event_type, conversation_id y message_id para que el cliente abra/actualice la conversación o responda a una oferta ephemeral.
+La suscripción se asocia al usuario y puede renovarse o revocarse.
+Aunque el MVP no ofrece multi-dispositivo normal, el modelo de tabla puede admitir varias suscripciones para evolución futura.
+13. PostgreSQL: modelo lógico definitivo
+users
+├─ user_keys (1 clave pública vigente por usuario)
+├─ auth_sessions
+├─ email_verification_tokens
+├─ invitations (invitation_id/generation; códigos derivados con HMAC)
+├─ web_push_subscriptions
+└─ conversation_members ── conversations
+                         ├─ message_events ── messages (solo stored)
+                         │                 └─ message_deliveries
+                         └─ votes ── vote_ballots
+13.1 users
+Cuenta principal. No existe contraseña.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK, gen_random_uuid().
+nick
+CITEXT
+NOT NULL, UNIQUE, público.
+email
+CITEXT
+NOT NULL, UNIQUE, privado.
+memory_hash
+TEXT
+NOT NULL. Argon2id de las 24 palabras BIP-39.
+email_verified
+BOOLEAN
+NOT NULL DEFAULT FALSE.
+is_active
+BOOLEAN
+NOT NULL DEFAULT TRUE.
+created_at
+TIMESTAMPTZ
+DEFAULT now().
+updated_at
+TIMESTAMPTZ
+DEFAULT now().
+13.2 user_keys
+Clave pública E2EE vigente. La clave privada no se guarda permanentemente en el servidor.
+Campo
+Tipo
+Restricciones / uso
+user_id
+UUID
+PK + FK users(id). Una sola clave pública vigente por usuario.
+public_key
+TEXT
+NOT NULL. Clave pública codificada para transporte/API.
+protocol_version
+INTEGER
+NOT NULL DEFAULT 1.
+created_at
+TIMESTAMPTZ
+DEFAULT now().
+updated_at
+TIMESTAMPTZ
+DEFAULT now(); se actualiza al rotar la clave.
+13.3 auth_sessions
+Sesiones de refresh. El access token puede ser JWT sin fila propia.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK.
+user_id
+UUID
+FK users(id).
+refresh_token_hash
+TEXT
+UNIQUE, NOT NULL.
+token_family_id
+UUID
+Agrupa rotaciones.
+created_at
+TIMESTAMPTZ
+DEFAULT now().
+last_rotated_at
+TIMESTAMPTZ
+DEFAULT now().
+expires_at
+TIMESTAMPTZ
+NOT NULL; 30 días.
+revoked_at
+TIMESTAMPTZ
+NULL si activa.
+13.4 email_verification_tokens
+Tokens temporales de verificación de correo.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK.
+user_id
+UUID
+FK users(id).
+token_hash
+TEXT
+UNIQUE, NOT NULL.
+created_at
+TIMESTAMPTZ
+DEFAULT now().
+expires_at
+TIMESTAMPTZ
+NOT NULL.
+used_at
+TIMESTAMPTZ
+NULL hasta consumo.
+13.5 invitations
+Un usuario debe tener como máximo una identidad de invitación active. El servidor no almacena los códigos completos: los deriva de los campos de la invitación y los autentica mediante HMAC-SHA-256. De una misma invitación se generan dos variantes, ephemeral y stored.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK; invitation_id aleatorio generado mediante CSPRNG.
+creator_user_id
+UUID
+FK users(id). La relación con el usuario solo existe en la BD.
+generation
+INTEGER
+NOT NULL; se incrementa al regenerar la invitación.
+status
+invitation_status
+active o revoked.
+created_at
+TIMESTAMPTZ
+DEFAULT now(); su timestamp forma parte del payload firmado.
+revoked_at
+TIMESTAMPTZ
+NULL mientras esté activa.
+use_count
+INTEGER
+DEFAULT 0.
+last_used_at
+TIMESTAMPTZ
+NULL hasta primer uso.
+13.6 conversations
+Estado y configuración de una conversación.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK.
+mode
+conversation_mode
+stored o ephemeral.
+status
+conversation_status
+pending, active, closed.
+created_from_invitation_id
+UUID
+FK invitations(id), NULL permitido.
+grace_message_limit
+SMALLINT
+DEFAULT 5.
+grace_messages_used
+SMALLINT
+DEFAULT 0.
+created_at
+TIMESTAMPTZ
+DEFAULT now().
+accepted_at
+TIMESTAMPTZ
+NULL hasta aceptación.
+closed_at
+TIMESTAMPTZ
+NULL hasta cierre.
+closed_by
+UUID
+FK users(id).
+mode_changed_at
+TIMESTAMPTZ
+NULL hasta que ephemeral se convierta a stored.
+mode_changed_by
+UUID
+FK users(id), NULL hasta cambio de modo.
+13.7 conversation_members
+Semántica de roles: host = propietario/creador de la invitación y receptor que acepta el contacto; guest = usuario que canjea el código e inicia la solicitud. Solo host puede aceptar una conversación pending y ejecutar ephemeral → stored. El cierre sigue siendo unilateral para cualquier participante.
+Relación N:M preparada para grupos futuros.
+Campo
+Tipo
+Restricciones / uso
+conversation_id
+UUID
+FK conversations(id), parte de PK.
+user_id
+UUID
+FK users(id), parte de PK.
+role
+member_role
+host/guest/member. MVP: exactamente un host (creador del código) y un guest (quien lo canjea); member queda reservado para grupos futuros.
+membership_status
+member_status
+invited/accepted/left.
+joined_at
+TIMESTAMPTZ
+DEFAULT now().
+accepted_at
+TIMESTAMPTZ
+NULL hasta aceptación.
+left_at
+TIMESTAMPTZ
+NULL mientras permanezca.
+13.8 message_events
+Registro técnico de contacto para stored y ephemeral. No contiene contenido del mensaje.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK; message_id global.
+conversation_id
+UUID
+FK conversations(id).
+sender_id
+UUID
+FK users(id).
+sent_at
+TIMESTAMPTZ
+DEFAULT now().
+expires_at
+TIMESTAMPTZ
+NOT NULL; 30 días desde sent_at.
+13.9 messages
+Solo ciphertext de modo stored. La PK coincide con message_events.id.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK + FK message_events(id).
+ciphertext
+BYTEA
+NOT NULL.
+crypto_meta
+BYTEA
+NOT NULL. Exactamente 56 bytes: nonce[24] || sender_public_key[32].
+protocol_version
+INTEGER
+DEFAULT 1.
+is_grace_message
+BOOLEAN
+DEFAULT FALSE.
+content_expires_at
+TIMESTAMPTZ
+NOT NULL; ≤ sent_at + 30 días.
+13.10 message_deliveries
+Estado por receptor. Funciona igual para stored y ephemeral y escala a grupos.
+Campo
+Tipo
+Restricciones / uso
+message_id
+UUID
+FK message_events(id), parte de PK.
+recipient_user_id
+UUID
+FK users(id), parte de PK.
+status
+delivery_status
+pending/delivered/failed/expired.
+received_at
+TIMESTAMPTZ
+NULL hasta ACK.
+updated_at
+TIMESTAMPTZ
+DEFAULT now().
+13.11 votes
+Votación genérica.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK.
+conversation_id
+UUID
+FK conversations(id).
+vote_type
+vote_type
+Inicialmente majority_absolute.
+subject
+TEXT
+Ej. retain_grace_messages.
+eligible_members
+INTEGER
+Snapshot del censo al abrir.
+status
+vote_status
+open/approved/rejected/cancelled.
+created_at
+TIMESTAMPTZ
+DEFAULT now().
+closed_at
+TIMESTAMPTZ
+NULL mientras abierta.
+expires_at
+TIMESTAMPTZ
+NOT NULL; created_at + 30 segundos para retain_grace_messages.
+13.12 vote_ballots
+Un voto por usuario y votación.
+Campo
+Tipo
+Restricciones / uso
+vote_id
+UUID
+FK votes(id), parte de PK.
+user_id
+UUID
+FK users(id), parte de PK.
+choice
+BOOLEAN
+TRUE sí / FALSE no.
+voted_at
+TIMESTAMPTZ
+DEFAULT now().
+13.13 web_push_subscriptions
+Suscripciones Web Push.
+Campo
+Tipo
+Restricciones / uso
+id
+UUID
+PK.
+user_id
+UUID
+FK users(id).
+endpoint
+TEXT
+UNIQUE, NOT NULL.
+p256dh
+TEXT
+Clave pública de la suscripción.
+auth_secret
+TEXT
+Secreto de autenticación de Web Push.
+created_at
+TIMESTAMPTZ
+DEFAULT now().
+last_seen_at
+TIMESTAMPTZ
+DEFAULT now().
+revoked_at
+TIMESTAMPTZ
+NULL si activa.
+14. Enumerados, índices y restricciones
+Tipo
+Valores
+conversation_mode
+stored, ephemeral
+conversation_status
+pending, active, closed
+member_role
+host, guest, member
+member_status
+invited, accepted, left
+invitation_status
+active, revoked
+delivery_status
+pending, delivered, failed, expired
+vote_type
+majority_absolute, majority_simple, unanimous, owner_decides
+vote_status
+open, approved, rejected, cancelled
+UNIQUE users.nick y users.email.
+user_keys usa user_id como PRIMARY KEY; no requiere un índice adicional para la clave pública vigente.
+Índice auth_sessions(user_id, expires_at) y UNIQUE refresh_token_hash.
+Índice conversation_members(user_id, membership_status).
+UNIQUE parcial conversation_members(conversation_id) WHERE role = host para garantizar un único host por conversación.
+Índice invitations(creator_user_id, status), UNIQUE parcial para una sola invitación active por usuario y UNIQUE (creator_user_id, generation).
+Índice message_events(conversation_id, sent_at DESC) y message_events(expires_at).
+Índice messages(content_expires_at).
+Índice message_deliveries(recipient_user_id, status).
+Índice votes(conversation_id, status) e índice parcial votes(expires_at) para votaciones abiertas.
+CHECK 0 ≤ grace_messages_used ≤ grace_message_limit.
+15. Redis: configuración y keyspace
+Redis no es almacenamiento durable. Debe ejecutarse con AOF y snapshots desactivados.
+appendonly no
+save ""
+Clave
+Tipo
+Uso
+TTL
+presence:user:{user_id}
+HASH
+online, connection_count, last_heartbeat
+60-90 s renovable
+connection:{connection_id}
+STRING/HASH
+connection_id → user_id
+60-90 s renovable
+user_connections:{user_id}
+SET
+Conexiones activas
+60-90 s renovable
+ephemeral:offer:{message_id}:{recipient_id}
+HASH/STRING
+Oferta ephemeral sin ciphertext: sender_id, conversation_id y estado de handshake
+60 s por defecto; DEL en ready/timeout/cancelación
+ephemeral:delivery:{message_id}:{recipient_id}
+HASH/STRING
+Ciphertext efímero + crypto_meta únicamente después de message.ready
+EPHEMERAL_DELIVERY_TIMEOUT_SECONDS (60 s por defecto); DEL en ACK/desconexión
+events:user:{user_id}
+Pub/Sub
+Eventos de WebSocket
+Sin TTL; canal
+key_transfer:{transfer_id}
+STRING/BINARY
+Blob cifrado de claves
+24 h máximo; DEL tras descarga/confirmación
+bootstrap:jti:{jti}
+STRING
+Anti-replay de token bootstrap si se usa one-time exchange
+TTL igual al bootstrap token
+15.1 Entrega efímera
+1. A → servidor: message.offer(message_id), sin ciphertext.
+2. SET ephemeral:offer:{message_id}:{recipient_id} ... EX 60.
+3. Si B está online: PUBLISH message.offer. Si está offline: enviar Web Push genérico y esperar conexión/ready hasta timeout.
+4. B → servidor: message.ready(message_id).
+5. Servidor → A: message.ready; DEL ephemeral:offer:...
+6. A → servidor: message.send con ciphertext + crypto_meta.
+7. Crear message_events/message_deliveries en PostgreSQL de forma idempotente.
+8. SET ephemeral:delivery:{message_id}:{recipient_id} <ciphertext> EX 60.
+9. PUBLISH events:user:{recipient_id} message.new.
+10. B recibe el ciphertext completo y envía message.ack.
+11. UPDATE message_deliveries = delivered.
+12. DEL ephemeral:delivery:{message_id}:{recipient_id}.
+13. Servidor → A: message.delivered.
+
+Si offer expira sin message.ready:
+  DEL ephemeral:offer:...
+  message.failed → A
+  no crear message_events y el ciphertext nunca sale de A
+
+Si B se desconecta después de message.send y antes del ACK:
+  DEL ephemeral:delivery:...
+  UPDATE delivery = failed
+  message.failed → A
+15.2 Transferencia de claves
+POST /key-transfers           → transfer_id
+PUT  /key-transfers/{id}      → SET key_transfer:{id} <encrypted_blob> EX 86400
+QR directo entre dispositivos → {transfer_id, secret, version}
+GET  /key-transfers/{id}      → encrypted_blob
+confirmación                  → DEL key_transfer:{id}
+16. Política de duración y limpieza
+Dato
+Lugar
+Duración
+Access token
+Cliente/JWT
+24 horas
+Refresh token
+PostgreSQL, solo hash
+30 días, rotación en cada uso
+Frase de recuperación
+PostgreSQL, solo hash
+Mientras exista cuenta o hasta regeneración
+Ciphertext stored
+PostgreSQL messages
+Máximo 30 días desde envío
+Ciphertext ephemeral
+Redis RAM
+Desde message.send tras ready hasta ACK, desconexión o TTL de entrega (60 s por defecto)
+Registro técnico de contacto
+PostgreSQL message_events + deliveries
+30 días
+Presencia
+Redis RAM
+60-90 s renovable
+Códigos de invitación
+Derivados de PostgreSQL + HMAC del servidor; no se almacenan completos
+Hasta regeneración/revocación; recordatorio opcional cada 6 meses
+Blob de transferencia de claves
+Redis RAM
+Máximo 24 horas; borrar antes tras éxito
+Votación
+PostgreSQL
+Según vida de conversación; purgable con ella
+Oferta ephemeral (sin ciphertext)
+Redis RAM
+60 segundos por defecto; configurable
+17. SQL DDL de referencia
+Este script representa el esquema consolidado. Puede usarse como primera migración y luego dividirse con Alembic/Flyway.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS citext;
+
+CREATE TYPE conversation_mode AS ENUM ('stored', 'ephemeral');
+CREATE TYPE conversation_status AS ENUM ('pending', 'active', 'closed');
+CREATE TYPE member_role AS ENUM ('host', 'guest', 'member');
+CREATE TYPE member_status AS ENUM ('invited', 'accepted', 'left');
+CREATE TYPE invitation_status AS ENUM ('active', 'revoked');
+CREATE TYPE delivery_status AS ENUM ('pending', 'delivered', 'failed', 'expired');
+CREATE TYPE vote_type AS ENUM (
+  'majority_absolute', 'majority_simple', 'unanimous', 'owner_decides'
+);
+CREATE TYPE vote_status AS ENUM ('open', 'approved', 'rejected', 'cancelled');
+
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nick CITEXT NOT NULL UNIQUE,
+  email CITEXT NOT NULL UNIQUE,
+  memory_hash TEXT NOT NULL,
+  email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Una única clave pública E2EE vigente por usuario.
+CREATE TABLE user_keys (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  public_key TEXT NOT NULL,
+  protocol_version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE auth_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  refresh_token_hash TEXT NOT NULL UNIQUE,
+  token_family_id UUID NOT NULL DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_rotated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ NULL
+);
+CREATE INDEX idx_auth_sessions_user_exp ON auth_sessions(user_id, expires_at);
+
+CREATE TABLE email_verification_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ NULL
+);
+
+-- id es invitation_id. Los códigos visibles NO se guardan completos.
+-- Invitation token v1, fixed binary layout, all multibyte integers big-endian:
+-- payload = version:uint8[1] || invitation_id:UUID[16] || generation:uint32[4] || created_at:uint64[8] || mode:uint8[1]
+-- payload size = 30 bytes; mode 0 = ephemeral, 1 = stored.
+-- mac = HMAC-SHA-256(INVITATION_HMAC_SECRET, payload)[32]
+-- token = Base64URL(payload || mac) without padding; total raw size 62 bytes / 83 chars Base64URL.
+CREATE TABLE invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  creator_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  status invitation_status NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ NULL,
+  use_count INTEGER NOT NULL DEFAULT 0 CHECK (use_count >= 0),
+  last_used_at TIMESTAMPTZ NULL,
+  UNIQUE (creator_user_id, generation)
+);
+CREATE INDEX idx_invitations_creator_status
+  ON invitations(creator_user_id, status);
+CREATE UNIQUE INDEX uq_one_active_invitation_per_user
+  ON invitations(creator_user_id) WHERE status = 'active';
+
+CREATE TABLE conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  mode conversation_mode NOT NULL,
+  status conversation_status NOT NULL DEFAULT 'pending',
+  created_from_invitation_id UUID NULL REFERENCES invitations(id) ON DELETE SET NULL,
+  grace_message_limit SMALLINT NOT NULL DEFAULT 5 CHECK (grace_message_limit >= 0),
+  grace_messages_used SMALLINT NOT NULL DEFAULT 0 CHECK (grace_messages_used >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  accepted_at TIMESTAMPTZ NULL,
+  mode_changed_at TIMESTAMPTZ NULL,
+  mode_changed_by UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  closed_at TIMESTAMPTZ NULL,
+  closed_by UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  CHECK (grace_messages_used <= grace_message_limit)
+);
+
+CREATE TABLE conversation_members (
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role member_role NOT NULL,
+  membership_status member_status NOT NULL DEFAULT 'invited',
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  accepted_at TIMESTAMPTZ NULL,
+  left_at TIMESTAMPTZ NULL,
+  PRIMARY KEY (conversation_id, user_id)
+);
+CREATE INDEX idx_conversation_members_user_status
+  ON conversation_members(user_id, membership_status);
+CREATE UNIQUE INDEX uq_one_host_per_conversation
+  ON conversation_members(conversation_id) WHERE role = 'host';
+
+CREATE TABLE message_events (
+  id UUID PRIMARY KEY,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_message_events_conversation_sent
+  ON message_events(conversation_id, sent_at DESC);
+CREATE INDEX idx_message_events_expires ON message_events(expires_at);
+
+CREATE TABLE messages (
+  id UUID PRIMARY KEY REFERENCES message_events(id) ON DELETE CASCADE,
+  ciphertext BYTEA NOT NULL,
+  crypto_meta BYTEA NOT NULL CHECK (octet_length(crypto_meta) = 56),
+  protocol_version INTEGER NOT NULL DEFAULT 1,
+  is_grace_message BOOLEAN NOT NULL DEFAULT FALSE,
+  content_expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_messages_content_expires ON messages(content_expires_at);
+
+CREATE TABLE message_deliveries (
+  message_id UUID NOT NULL REFERENCES message_events(id) ON DELETE CASCADE,
+  recipient_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status delivery_status NOT NULL DEFAULT 'pending',
+  received_at TIMESTAMPTZ NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (message_id, recipient_user_id)
+);
+CREATE INDEX idx_message_deliveries_recipient_status
+  ON message_deliveries(recipient_user_id, status);
+
+CREATE TABLE votes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  vote_type vote_type NOT NULL DEFAULT 'majority_absolute',
+  subject TEXT NOT NULL,
+  eligible_members INTEGER NOT NULL CHECK (eligible_members > 0),
+  status vote_status NOT NULL DEFAULT 'open',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '30 seconds'),
+  closed_at TIMESTAMPTZ NULL
+);
+CREATE INDEX idx_votes_conversation_status ON votes(conversation_id, status);
+CREATE INDEX idx_votes_expires ON votes(expires_at) WHERE status = 'open';
+
+CREATE TABLE vote_ballots (
+  vote_id UUID NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  choice BOOLEAN NOT NULL,
+  voted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (vote_id, user_id)
+);
+
+CREATE TABLE web_push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth_secret TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ NULL
+);
+CREATE INDEX idx_web_push_user_active
+  ON web_push_subscriptions(user_id, revoked_at);
+18. Tareas periódicas
+-- Contenido stored expirado
+DELETE FROM messages
+WHERE content_expires_at <= now();
+
+-- Metadatos técnicos de contacto > 30 días
+DELETE FROM message_events
+WHERE expires_at <= now();
+
+-- Sesiones
+DELETE FROM auth_sessions
+WHERE expires_at <= now()
+   OR (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days');
+
+-- Verificación de correo
+DELETE FROM email_verification_tokens
+WHERE expires_at <= now() OR used_at IS NOT NULL;
+
+-- Votaciones
+-- Un scheduler finaliza votes abiertas cuando expires_at <= now().
+-- Los miembros elegibles sin ballot explícito se computan como NO.
+Redis aplica sus TTL de forma nativa. key_transfer debe eliminarse inmediatamente tras una transferencia confirmada, sin esperar al TTL de 24 horas.
+19. Reglas de implementación
+No aceptar contraseñas ni crear password_hash.
+No insertar ciphertext ephemeral en messages.
+Crear message_events/message_deliveries tanto para stored como para ephemeral para conservar únicamente la trazabilidad técnica de 30 días.
+Antes de insertar en messages, verificar conversations.mode = stored.
+content_expires_at no puede superar sent_at + 30 días.
+El contador grace_messages_used se incrementa de forma transaccional.
+Una conversación pending con 5 mensajes de gracia consumidos bloquea nuevos envíos hasta aceptación.
+Aceptar la conversación (acción exclusiva del host) crea inmediatamente la votación retain_grace_messages con expires_at = created_at + 30 segundos. Mientras esté open, message.offer y message.send se bloquean para esa conversación; los usuarios sin voto al vencer el plazo cuentan como NO.
+Una conversación closed no acepta mensajes.
+Solo se permite el cambio de mode ephemeral → stored. El cambio inverso se rechaza.
+Al convertir a stored, únicamente los mensajes enviados después de mode_changed_at se insertan en messages. Los demás participantes reciben conversation.mode_changed y pueden abandonar el chat.
+Regenerar invitación revoca la activa anterior y crea un nuevo invitation_id/generation dentro de la misma transacción. Los dos códigos (ephemeral/stored) se derivan con HMAC y no se guardan completos.
+message.send/message.ack solo por WebSocket.
+Los frames recovery.replay.* se transportan efímeramente y no se guardan como mensajes normales.
+key_transfer:{id} contiene solo blob cifrado; el secreto viaja por QR y no debe registrarse en logs.
+INVITATION_HMAC_SECRET debe generarse criptográficamente, mantenerse estable y fuera de la base de datos. Conocer el algoritmo o invitation_id no permite fabricar un código válido sin este secreto.
+GET /invitations/me genera bajo demanda las dos variantes Base64URL de la invitación activa. Cada 6 meses el cliente puede mostrar un recordatorio de rotación, sin regeneración automática.
+Redis debe iniciar con persistencia desactivada.
+MAX_MESSAGE_LENGTH=256 debe ser configurable. Añadir además un límite máximo de bytes del envelope cifrado.
+crypto_meta v1 es obligatorio y tiene exactamente 56 bytes: nonce libsodium de 24 bytes seguido de sender_public_key Curve25519 de 32 bytes. protocol_version se almacena por separado.
+message_id es idempotente. Un duplicado compatible devuelve el estado existente sin insertar otra fila, sin incrementar contadores y sin duplicar entrega. Un duplicado incompatible devuelve MESSAGE_ID_CONFLICT. Tras un fallo definitivo, un nuevo intento usa un nuevo message_id.
+En conversaciones creadas por invitación, el creador del código se registra como role=host y quien canjea el código como role=guest. Solo host puede POST /conversations/{id}/accept y POST /conversations/{id}/upgrade.
+El token de invitación v1 usa el layout fijo version:uint8 || invitation_id[16] || generation:uint32 || created_at:uint64 || mode:uint8, todos los enteros multibyte big-endian; después se añade HMAC-SHA-256 y se codifica Base64URL sin padding.
+El modo ephemeral usa obligatoriamente handshake message.offer → message.ready → message.send → message.new → message.ack → message.delivered. El ciphertext no abandona A antes de ready.
+EPHEMERAL_OFFER_TIMEOUT_SECONDS=60 y EPHEMERAL_DELIVERY_TIMEOUT_SECONDS=60 son valores iniciales configurables. Si offer vence, no se crea message_event. Si B se desconecta durante delivery, se elimina el ciphertext y el estado pasa a failed.
+En Web Push, stored notifica al aceptar message.send; ephemeral notifica message.offer cuando B no está conectado. Nunca se incluye texto ni ciphertext.
+20. Despliegue inicial
+Recurso
+Recomendación
+CPU
+2 vCPU
+RAM
+2-4 GB
+Disco
+30-50 GB SSD
+SO
+Ubuntu Server
+Contenedores
+Docker + Docker Compose
+Entrada
+Caddy :443
+Aplicación
+FastAPI
+Persistencia
+PostgreSQL
+Memoria volátil
+Redis sin AOF/snapshots
+21. Fuera de alcance de producción v1
+Chats grupales operativos. El esquema está preparado, pero el MVP es 1 a 1.
+Multi-dispositivo permanente. Solo se admite coexistencia temporal durante transferencia de claves.
+Imágenes y archivos adjuntos.
+Políticas de votación distintas de majority_absolute, aunque el modelo las contempla.
+Bindings concretos de libsodium según la plataforma cliente final (web/móvil/escritorio), manteniendo Curve25519/X25519 y el mismo formato de claves.
+Integración definitiva con la lógica de negocio del marketplace más allá del bootstrap de sesión.
+22. Criterios de aceptación del MVP
+Registro sin contraseña y recuperación con 24 palabras BIP-39.
+Access token de 24 h y refresh token rotatorio.
+Entrada desde la app principal mediante token firmado.
+WebSocket autenticado con envelope genérico y soporte de message.offer/ready/send/new/ack/delivered/failed.
+stored conserva ciphertext hasta 30 días y permite recuperarlo.
+ephemeral ejecuta handshake offer/ready, mantiene el ciphertext en A hasta ready, espera offer 60 s por defecto, no deja ciphertext persistente y elimina/falla si B se desconecta antes del ACK.
+Metadatos técnicos de contacto se purgan a los 30 días.
+Una identidad de invitación active por usuario, dos códigos derivados (ephemeral/stored), HMAC-SHA-256 + Base64URL, regeneración manual y recordatorio semestral opcional.
+Máximo 5 mensajes de gracia y votación majority_absolute bloqueante durante 30 segundos; ausencia de voto = NO.
+Cierre unilateral y reapertura solo mediante nuevo flujo de invitación.
+Cambio irreversible ephemeral → stored funcional; solo persiste mensajes posteriores al cambio y el otro participante puede abandonar la conversación.
+Web Push funcional sin incluir contenido del mensaje.
+Transferencia de claves mediante blob cifrado + secreto por QR, TTL máximo 24 h.
+Redis reiniciable sin persistir mensajes efímeros ni blobs de claves.
+message_id es idempotente y las retransmisiones no crean duplicados ni consumen dos veces el límite de mensajes de gracia.
+Cada conversación creada por código identifica un único host y un guest; solo host puede aceptar pending y ejecutar ephemeral → stored.
+Los códigos de invitación usan layout binario fijo big-endian + HMAC-SHA-256 + Base64URL sin padding.
+crypto_meta de cada mensaje contiene nonce[24] || sender_public_key[32] y protocol_version se conserva explícitamente.
+23. Perfil normativo de producción v1
+Las secciones 23 a 31 cierran los detalles de producción que no alteran la lógica funcional ya definida. Cuando una regla de estas secciones sea más específica que una regla anterior, se aplica la regla más específica. El objetivo es que una implementación pueda realizarse sin inventar formatos, parámetros de autenticación, políticas de reintento, límites operativos ni criterios de despliegue.
+23.1 Convenciones de protocolo
+Elemento
+Decisión de producción
+Base REST
+/api/v1
+WebSocket
+/ws/v1
+Formato REST y WebSocket
+JSON UTF-8. No se aceptan frames WebSocket binarios.
+Binarios en JSON
+Base64URL sin padding.
+Fechas
+RFC3339 en UTC, por ejemplo 2026-09-15T18:30:42.123Z.
+Tiempo autoritativo
+El servidor asigna sent_at, received_at, created_at y expiraciones. El timestamp enviado por el cliente nunca decide orden, expiración ni permisos.
+Identificadores
+UUID en representación canónica de texto. message_id y request_id son generados por el cliente como UUIDv4; los IDs de recursos del servidor son UUID.
+Validación
+DTOs estrictos. Campos desconocidos se rechazan con 422 UNKNOWN_FIELD; no se ignoran silenciosamente.
+Respuesta correcta
+Se devuelve directamente el recurso o DTO. No se usa wrapper success/data.
+Correlación HTTP
+El cliente puede enviar X-Request-ID. Si falta, el servidor genera uno. Siempre se devuelve X-Request-ID en la respuesta.
+Tamaño HTTP global
+MAX_HTTP_BODY_BYTES=131072 (128 KiB). Los endpoints pueden imponer límites menores.
+Tamaño WebSocket
+MAX_ENVELOPE_BYTES=8192 bytes por frame JSON.
+23.2 Modelo único de errores REST
+{
+  "error": {
+    "code": "CONVERSATION_CLOSED",
+    "message": "Conversation is closed.",
+    "request_id": "uuid",
+    "details": {}
+  }
+}
+code es estable y sirve para lógica del cliente. message es texto técnico en inglés y no debe usarse como texto final de interfaz. details solo contiene datos no sensibles necesarios para corregir la petición.
+HTTP
+Uso normativo
+200
+Lectura o operación correcta con cuerpo.
+201
+Recurso creado.
+202
+Trabajo asíncrono aceptado, por ejemplo reenvío de correo.
+204
+Operación correcta sin cuerpo.
+400
+Petición mal formada o token/código con formato inválido.
+401
+Falta autenticación o el token de acceso no es válido.
+403
+Usuario autenticado sin permiso para la operación.
+404
+Recurso inexistente o no visible para el usuario.
+409
+El estado actual del recurso impide la operación o existe un conflicto idempotente.
+410
+Recurso temporal conocido pero revocado/consumido/expirado de forma definitiva.
+413
+Payload/request/frame demasiado grande para el límite HTTP configurado.
+422
+JSON válido cuya estructura o valores no cumplen el contrato.
+429
+Rate limit superado.
+500
+Error interno no esperado del servidor.
+503
+Dependencia esencial no disponible; la operación falla cerrada.
+23.3 Catálogo de códigos de error v1
+Código
+HTTP habitual
+Significado
+AUTH_REQUIRED
+401
+Falta autenticación.
+TOKEN_INVALID
+401
+JWT, refresh token o firma inválidos.
+TOKEN_EXPIRED
+401
+Token expirado.
+UNKNOWN_FIELD
+422
+El JSON contiene un campo no definido por el DTO v1; se rechaza para evitar ambigüedad.
+SESSION_REVOKED
+401
+sid revocado o sesión expirada.
+REFRESH_REUSE_DETECTED
+401
+Se reutilizó un refresh token ya rotado; se revoca la familia.
+EMAIL_NOT_VERIFIED
+403
+La operación requiere email verificado.
+USER_NOT_FOUND
+404
+Usuario no visible o inexistente.
+NICK_TAKEN
+409
+nick ya utilizado.
+EMAIL_TAKEN
+409
+email ya registrado.
+INVALID_RECOVERY_PHRASE
+401
+Frase de recuperación incorrecta.
+INVITATION_INVALID
+400
+Código mal formado, firma inválida o versión no admitida.
+INVALID_CURSOR
+400
+Cursor de paginación mal formado, incompatible o manipulado.
+INVITATION_REVOKED
+410
+Invitación regenerada o revocada.
+CONVERSATION_NOT_FOUND
+404
+Conversación no visible.
+CONVERSATION_CLOSED
+409
+La conversación está cerrada.
+CONVERSATION_NOT_ACTIVE
+409
+La operación requiere conversación active.
+NOT_CONVERSATION_HOST
+403
+La acción está reservada al host.
+GRACE_LIMIT_REACHED
+409
+Se alcanzó el máximo de mensajes de gracia.
+VOTE_OPEN
+409
+La conversación está bloqueada por una votación abierta.
+VOTE_EXPIRED
+410
+La votación ya terminó.
+MESSAGE_ID_CONFLICT
+409
+message_id ya existe con conversación, emisor o fingerprint incompatibles.
+OFFER_TIMEOUT
+N/A WS
+message.offer expiró antes de message.ready.
+DELIVERY_TIMEOUT
+N/A WS
+La entrega ephemeral expiró antes de ACK.
+RECIPIENT_DISCONNECTED
+N/A WS
+El receptor se desconectó durante la entrega ephemeral.
+HISTORY_NOT_STORED
+409
+Se intentó pedir historial de contenido de una conversación ephemeral.
+KEY_TRANSFER_EXPIRED
+410
+Transferencia de claves expirada o consumida.
+PAYLOAD_TOO_LARGE
+413/WS 1009
+Petición o frame supera el límite configurado.
+UNSUPPORTED_PROTOCOL_VERSION
+422
+protocol_version no soportado.
+RATE_LIMITED
+429
+Límite temporal superado.
+TEMPORARY_UNAVAILABLE
+503
+PostgreSQL/Redis u otra dependencia esencial no disponible.
+INTERNAL_ERROR
+500
+Error no esperado; no se exponen detalles internos.
+23.4 Paginación
+GET /conversations y GET /conversations/{id}/messages usan cursor opaco, no números de página.
+?limit=50&cursor=<base64url>
+
+{
+  "items": [],
+  "next_cursor": null
+}
+limit por defecto: 50. Mínimo: 1. Máximo: 100.
+El cursor se construye con la clave estable de orden y el UUID de desempate, se codifica Base64URL sin padding y siempre se trata como entrada no confiable.
+Conversaciones: orden updated_at DESC, id DESC.
+Mensajes stored: orden sent_at DESC, id DESC. El cliente puede invertir cada página para presentarla cronológicamente.
+Un cursor inválido devuelve 400 INVALID_CURSOR. No se firma porque no concede permisos; el servidor valida todos sus campos.
+24. Autenticación, sesiones y recuperación de producción
+24.1 Access token JWT
+Los access tokens son JWT firmados con Ed25519/EdDSA. El Chat API posee la clave privada de firma; consumidores que solo necesiten verificar reciben únicamente claves públicas.
+Header:
+{
+  "alg": "EdDSA",
+  "typ": "JWT",
+  "kid": "chat-2026-H2"
+}
+
+Claims:
+{
+  "sub": "user-uuid",
+  "sid": "session-uuid",
+  "iss": "chat-api",
+  "aud": "chat-client",
+  "iat": 1789490000,
+  "nbf": 1789490000,
+  "exp": 1789576400,
+  "jti": "uuid"
+}
+TTL: 24 horas (86400 s).
+No se incluyen nick, email, roles de conversación ni otros datos mutables.
+Se rechaza cualquier alg distinto de EdDSA, typ inesperado, kid desconocido, issuer/audience incorrectos o token fuera de tiempo.
+Tolerancia máxima de reloj para iat/nbf/exp: 30 segundos. El host de producción debe mantener sincronización NTP.
+Cada petición autenticada comprueba además que sid existe, no está revocado y no ha expirado. El JWT no es suficiente por sí solo.
+Logout revoca sid inmediatamente. La revocación se publica por Redis para cerrar WebSockets asociados a esa sesión.
+24.2 Refresh token
+Token opaco de 32 bytes generado mediante CSPRNG y transportado como Base64URL sin padding.
+TTL: 30 días.
+El servidor nunca almacena el token en claro; almacena SHA-256(token) como 32 bytes.
+Cada uso rota el token. El token utilizado queda marcado used_at y se emite uno nuevo en la misma token_family_id.
+Si vuelve a aparecer un token con used_at no nulo, se considera reutilización: se revoca inmediatamente toda la familia y la respuesta es REFRESH_REUSE_DETECTED.
+Un reintento de red del cliente debe usar únicamente la respuesta del primer refresh exitoso; no se tolera volver a presentar el token anterior.
+24.3 Persistencia de refresh para detectar reutilización
+Para que la detección sobreviva reinicios de Redis, producción añade historial persistente de refresh tokens. auth_sessions continúa representando la sesión/sid; auth_refresh_tokens conserva únicamente hashes y estados.
+CREATE TABLE auth_refresh_tokens (
+  token_hash BYTEA PRIMARY KEY CHECK (octet_length(token_hash) = 32),
+  session_id UUID NOT NULL REFERENCES auth_sessions(id) ON DELETE CASCADE,
+  token_family_id UUID NOT NULL,
+  issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ NULL,
+  revoked_at TIMESTAMPTZ NULL
+);
+CREATE INDEX idx_auth_refresh_tokens_session
+  ON auth_refresh_tokens(session_id, expires_at);
+CREATE INDEX idx_auth_refresh_tokens_family
+  ON auth_refresh_tokens(token_family_id);
+auth_sessions.refresh_token_hash puede mantenerse como puntero al refresh vigente para acceso rápido, pero la decisión de reutilización se toma contra auth_refresh_tokens.
+24.4 Bootstrap desde la aplicación principal
+El bootstrap token también es JWT Ed25519/EdDSA, pero usa un par de claves diferente al del Chat API. La aplicación principal conserva la privada; Chat API conserva únicamente las públicas de verificación.
+{
+  "sub": "user-uuid",
+  "iss": "main-app",
+  "aud": "chat-api",
+  "iat": 1789490000,
+  "nbf": 1789490000,
+  "exp": 1789490300,
+  "jti": "uuid"
+}
+TTL máximo admitido: 5 minutos. Un token con exp-iat superior a 300 s se rechaza.
+jti es de un solo uso. POST /auth/exchange realiza una operación atómica SET NX en Redis con TTL hasta exp; un jti ya consumido se rechaza.
+Si Redis no está disponible, /auth/exchange falla con 503. No existe degradación que permita replay.
+No se incluyen nick, email ni permisos. sub debe corresponder a una cuenta de chat existente.
+24.5 Frase de recuperación y Argon2id
+BIP-39 de 24 palabras; wordlist inglesa para protocol_version=1.
+Antes de verificar/hash: normalización Unicode NFKD y separación canónica mediante un único espacio ASCII.
+Argon2id: memory_cost=65536 KiB (64 MiB), time_cost=3, parallelism=1, salt aleatorio=16 bytes, hash=32 bytes.
+Se almacena la cadena codificada completa de Argon2id con parámetros y salt; nunca la frase.
+POST /auth/recover correcto revoca todas las sesiones actuales del usuario y crea una nueva sesión.
+La recuperación de cuenta no recupera una clave E2EE privada perdida. El historial cifrado solo puede recuperarse por las reglas de transferencia/replay ya definidas.
+24.6 Verificación de email
+Token de 32 bytes CSPRNG, Base64URL sin padding.
+Solo se persiste SHA-256(token). TTL: 30 minutos. Un token es de un solo uso.
+Solicitar reenvío invalida tokens anteriores aún no usados y genera uno nuevo.
+Registro emite una sesión normal con email_verified=false; cuenta, recuperación y verificación funcionan, pero crear/canjear invitaciones, obtener ws-ticket y enviar mensajes exige email_verified=true.
+24.7 Rotación de claves de firma
+Las claves Ed25519 de access token y las claves Ed25519 de bootstrap son pares independientes.
+Rotación ordinaria cada 6 meses. kid identifica la clave.
+Solo una clave privada firma en cada momento. Claves públicas anteriores se conservan exclusivamente para verificación hasta que expire el último token que pudieron firmar.
+Una clave privada comprometida se retira de verificación inmediatamente. Para una clave de Chat JWT comprometida se revocan sesiones y se fuerza nueva autenticación.
+INVITATION_HMAC_SECRET no rota por calendario: rotarlo invalida todas las invitaciones y solo se hace por compromiso o migración planificada.
+VAPID tampoco rota por calendario porque obligaría a renovar suscripciones Push; se rota ante compromiso.
+25. Contrato REST v1
+25.1 Tipos reutilizables
+Tipo
+Campos normativos
+UserPrivate
+id:UUID, nick:string, email:string, email_verified:boolean, is_active:boolean, created_at:RFC3339, updated_at:RFC3339
+UserPublic
+id:UUID, nick:string
+TokenPair
+access_token:string, refresh_token:string, token_type:"Bearer", expires_in:86400, refresh_expires_in:2592000, sid:UUID
+InvitationCodes
+ephemeral_code:string[83], stored_code:string[83], generation:uint32, created_at:RFC3339
+ConversationSummary
+id:UUID, mode:stored|ephemeral, status:pending|active|closed, role:host|guest, grace_message_limit:int, grace_messages_used:int, created_at, accepted_at?, mode_changed_at?, closed_at?, peer:UserPublic|null
+StoredMessage
+message_id:UUID, sender_role:host|guest, sent_at:RFC3339, protocol_version:int, ciphertext:Base64URL, crypto_meta:Base64URL[56 bytes], is_grace_message:boolean, content_expires_at:RFC3339
+DeliveryStatus
+message_id:UUID, status:pending|delivered|failed|expired, sent_at:RFC3339, received_at:RFC3339|null, expires_at:RFC3339
+VoteSnapshot
+id:UUID, conversation_id:UUID, subject:string, policy:string, eligible_members:int, yes_votes:int, no_votes:int, status:open|approved|rejected|cancelled, expires_at:RFC3339, my_vote:boolean|null
+Page<T>
+items:T[], next_cursor:string|null
+nick v1: 3 a 32 caracteres ASCII, patrón ^[A-Za-z0-9_]{3,32}$. La unicidad es case-insensitive mediante CITEXT. email se valida sintácticamente y se compara case-insensitive.
+25.2 Usuarios y autenticación
+Endpoint
+Request
+Éxito
+POST /api/v1/users/register
+{nick, email}
+201 {user:UserPrivate, recovery_mnemonic:string, tokens:TokenPair}. La frase solo aparece en esta respuesta.
+GET /api/v1/users/me
+Bearer access token
+200 UserPrivate
+PATCH /api/v1/users/me
+{nick? , email?}
+200 UserPrivate. Cambiar email pone email_verified=false y dispara nueva verificación.
+DELETE /api/v1/users/me
+Bearer access token
+204. Borrado de cuenta del servidor: revoca sesiones/invitación/push y elimina por FK/cascada los datos propios. Las copias locales de otros usuarios no pueden borrarse remotamente.
+GET /api/v1/users/{user_id}
+Bearer access token
+200 UserPublic. Usuarios inactivos/no visibles devuelven 404.
+POST /api/v1/users/verify-email
+{token:string}
+204. Token de un solo uso.
+POST /api/v1/users/resend-verification
+Bearer access token
+202. Genera token nuevo e invalida los anteriores activos.
+POST /api/v1/auth/exchange
+{bootstrap_token:string}
+200 TokenPair. jti bootstrap se consume atómicamente.
+POST /api/v1/auth/recover
+{email:string, recovery_mnemonic:string}
+200 TokenPair. Revoca todas las sesiones anteriores.
+POST /api/v1/auth/refresh
+{refresh_token:string}
+200 TokenPair con refresh rotado.
+POST /api/v1/auth/logout
+Bearer access token
+204. Revoca sid y cierra WebSockets de esa sesión.
+POST /api/v1/auth/ws-ticket
+Bearer access token
+201 {ticket:string, expires_at:RFC3339}. Ticket CSPRNG de 32 bytes, un solo uso, TTL 30 s.
+25.3 Claves E2EE y transferencia entre dispositivos
+Endpoint
+Request
+Éxito
+PUT /api/v1/users/me/keys
+{public_key:Base64URL[32 bytes], protocol_version:1}
+200 {public_key, protocol_version, updated_at}. Registro inicial o sustitución idempotente.
+GET /api/v1/users/{user_id}/keys
+Sin body
+200 {public_key, protocol_version, updated_at}. Solo self o usuario con conversación pending/active/closed compartida.
+POST /api/v1/users/me/keys/rotate
+{public_key:Base64URL[32 bytes], protocol_version:1}
+200 {public_key, protocol_version, updated_at}. Sustituye la pública vigente.
+POST /api/v1/key-transfers
+Sin body
+201 {transfer_id:UUID, expires_at:RFC3339, max_blob_bytes:65536}.
+PUT /api/v1/key-transfers/{id}
+{encrypted_blob:Base64URL}
+204. Máximo 65536 bytes antes de Base64. Solo una carga; segunda carga devuelve 409.
+GET /api/v1/key-transfers/{id}
+Sin body
+200 {encrypted_blob, expires_at}. GET no borra para permitir reintento.
+DELETE /api/v1/key-transfers/{id}
+Sin body
+204. Confirma/cancela y elimina inmediatamente el blob.
+25.4 Invitaciones y conversaciones
+Endpoint
+Request
+Éxito
+GET /api/v1/invitations/me
+Sin body
+200 InvitationCodes.
+POST /api/v1/invitations/regenerate
+Sin body
+201 InvitationCodes; revoca ambas variantes anteriores.
+POST /api/v1/invitations/redeem
+{code:string[83]}
+201 ConversationSummary con role=guest y peer=null mientras pending. Devuelve además host_public_key para cifrar gracia, sin revelar nick.
+GET /api/v1/conversations
+?limit&cursor
+200 Page<ConversationSummary>.
+GET /api/v1/conversations/{id}
+Sin body
+200 ConversationSummary. peer permanece null durante pending; tras aceptación se expone UserPublic.
+POST /api/v1/conversations/{id}/accept
+Sin body
+200 {conversation:ConversationSummary, vote:VoteSnapshot}. Solo host; pasa pending→active.
+DELETE /api/v1/conversations/{id}
+Sin body
+204. Cierre unilateral; cancela offers no enviados y bloquea nuevos envíos.
+POST /api/v1/conversations/{id}/upgrade
+Sin body
+200 ConversationSummary. Solo host, active y mode=ephemeral.
+POST /api/v1/conversations/{id}/leave
+Sin body
+204. membership_status=left; en 1 a 1 el intercambio queda terminado para ese miembro.
+25.5 Mensajes, votaciones y Web Push
+Endpoint
+Request
+Éxito
+GET /api/v1/conversations/{id}/messages
+?limit&cursor
+200 Page<StoredMessage>. Solo stored. No devuelve filas con content_expires_at<=now().
+GET /api/v1/messages/{id}/status
+Sin body
+200 DeliveryStatus mientras exista message_events.
+POST /api/v1/votes/{id}/ballots
+{choice:boolean}
+200 VoteSnapshot. Repetir el mismo voto es idempotente; intentar cambiarlo devuelve 409.
+GET /api/v1/votes/{id}
+Sin body
+200 VoteSnapshot.
+POST /api/v1/push/subscriptions
+{endpoint:string, p256dh:string, auth_secret:string}
+201 {id:UUID}. Upsert por endpoint para el mismo usuario.
+DELETE /api/v1/push/subscriptions/{id}
+Sin body
+204.
+GET /health/live
+Sin auth
+200 {status:"ok"}. Solo comprueba proceso/event loop.
+GET /health/ready
+Red interna/monitorización
+200 si PostgreSQL+Redis están utilizables; 503 en caso contrario.
+25.6 Visibilidad durante pending
+Mientras status=pending, peer=null para ambos clientes. La UI trabaja con role host/guest y conversation_id, no con la identidad pública del otro participante.
+El guest recibe la clave pública vigente del host al canjear el código para poder cifrar mensajes de gracia.
+El host puede recibir/descifrar gracia con su clave, pero la identidad pública del guest no se expone hasta accept.
+Tras accept, ambos obtienen UserPublic del peer mediante GET /conversations/{id}.
+26. Contrato WebSocket v1
+26.1 Autenticación mediante ticket de un solo uso
+No se coloca el access token JWT en la URL WebSocket. El cliente obtiene primero un ws-ticket mediante REST y lo usa una sola vez:
+POST /api/v1/auth/ws-ticket
+Authorization: Bearer <access JWT>
+
+→ 201 {"ticket":"...", "expires_at":"..."}
+
+wss://chat.example/ws/v1?ticket=<ticket>
+ticket: 32 bytes CSPRNG, Base64URL sin padding.
+Redis guarda ws_ticket:{sha256(ticket)} → {user_id,sid} con TTL 30 s.
+La apertura WebSocket usa GETDEL/operación atómica equivalente; ticket consumido o expirado no puede reutilizarse.
+Si la sesión sid se revoca, Redis Pub/Sub ordena cerrar cualquier socket asociado inmediatamente.
+Redis no disponible implica fallo cerrado: no se emiten tickets nuevos y no se aceptan conexiones sin validación.
+26.2 Conexión, heartbeat y reconexión
+Tras autenticación el servidor envía session.ready con user_id, sid, server_time y heartbeat_interval_seconds=25.
+Heartbeat usa frames WebSocket nativos ping/pong, no mensajes JSON personalizados.
+El servidor envía ping cada 25 s y considera muerta una conexión que no responde durante 75 s. presence TTL es 90 s renovable.
+Cliente reconecta con backoff 1, 2, 4, 8, 16, 30 s y jitter aleatorio de hasta 20 %. Cada reconexión exige un ws-ticket nuevo.
+Al reconectar, el cliente consulta por REST el estado de mensajes dudosos mediante /messages/{id}/status y recupera historial stored si procede.
+26.3 Envelope normativo
+{
+  "type": "message.send",
+  "request_id": "uuid",
+  "conversation_id": "uuid-or-null",
+  "timestamp": "2026-09-15T18:30:00Z",
+  "payload": {}
+}
+type, request_id, timestamp y payload son obligatorios. conversation_id es null únicamente para eventos de sesión sin conversación.
+request_id identifica la operación/frame y message_id identifica el mensaje lógico; no son intercambiables.
+Para eventos correlacionados, el servidor conserva request_id cuando resulte útil. Para eventos espontáneos genera uno nuevo.
+En frames cliente→servidor, timestamp se valida como RFC3339 pero no es autoritativo. En frames servidor→cliente, timestamp es hora del servidor.
+payload siempre es un objeto JSON. Frames binarios se rechazan con close 1003.
+26.4 Eventos y payloads exactos
+type
+Dirección
+payload v1
+session.ready
+S→C
+{user_id:UUID, sid:UUID, server_time:RFC3339, heartbeat_interval_seconds:25}
+message.offer
+A→S / S→B
+{message_id:UUID}. No contiene ciphertext. Solo válido en conversation.mode=ephemeral.
+message.ready
+B→S / S→A
+{message_id:UUID}.
+message.send
+C→S
+{message_id:UUID, protocol_version:1, ciphertext:Base64URL, crypto_meta:Base64URL[56 bytes]}.
+message.new
+S→B
+{message_id:UUID, sender_role:host|guest, sent_at:RFC3339, protocol_version:1, ciphertext:Base64URL, crypto_meta:Base64URL}.
+message.ack
+B→S
+{message_id:UUID}. Solo después de haber recibido el frame message.new completo y validado su estructura.
+message.delivered
+S→A
+{message_id:UUID, received_at:RFC3339}.
+message.failed
+S→A
+{message_id:UUID, code:OFFER_TIMEOUT|DELIVERY_TIMEOUT|RECIPIENT_DISCONNECTED|CONVERSATION_CLOSED|VOTE_OPEN|TEMPORARY_UNAVAILABLE, retryable:boolean}.
+conversation.closed
+S→miembros
+{closed_at:RFC3339, closed_by_role:host|guest}.
+conversation.mode_changed
+S→miembros
+{old_mode:"ephemeral", new_mode:"stored", changed_at:RFC3339, changed_by_role:"host"}.
+vote.opened
+S→miembros
+VoteSnapshot.
+vote.updated
+S→miembros
+VoteSnapshot.
+recovery.replay.begin
+C→S→peer
+{replay_id:UUID}.
+recovery.replay.item
+C→S→peer
+{replay_id:UUID, sequence:uint32, original_message_id:UUID|null, original_timestamp:RFC3339|null, protocol_version:int, ciphertext:Base64URL, crypto_meta:Base64URL}.
+recovery.replay.end
+C→S→peer
+{replay_id:UUID, item_count:uint32}.
+system.error
+S→C
+{code:string, message:string, retryable:boolean, details:object}.
+26.5 Reglas de entrega stored
+stored no usa message.offer/message.ready. El cliente envía message.send directamente.
+El servidor crea message_events/messages/message_deliveries en una transacción y confirma aceptación al emisor mediante el estado del mensaje. Si el receptor está conectado, también emite message.new.
+Si el receptor está offline, el mensaje permanece pending y se envía Web Push genérico. Al volver, el cliente recupera el ciphertext mediante GET /conversations/{id}/messages.
+ACK actualiza delivered, pero no borra messages; el ciphertext permanece hasta content_expires_at.
+26.6 Reglas de entrega ephemeral y carreras con cambios de estado
+message.offer snapshottea únicamente sender/conversation/recipient y no crea message_events.
+message.send obtiene lock de la conversación antes de crear el evento. Si la conversación ya cambió a stored, se rechaza el envío ephemeral con message.failed y el cliente reintenta como stored con un message_id nuevo.
+POST /upgrade, POST /accept y DELETE /conversation también bloquean la fila de conversación. El orden real de commit determina si un send ocurrió antes o después del cambio.
+Al hacer upgrade se cancelan offers ephemeral todavía no convertidos en message.send. Un delivery que ya creó message_event antes del upgrade puede terminar normalmente como ephemeral.
+Al cerrar una conversación se cancelan offers pendientes y se rechazan nuevos sends. Un message.send ya confirmado antes del cierre puede completar su ACK.
+26.7 Close codes
+Código
+Uso
+1000
+Cierre normal.
+1001
+Servidor en draining/restart; el cliente puede reconectar.
+1003
+Frame binario/no soportado.
+1008
+Violación de protocolo o acción no permitida repetida.
+1009
+Frame supera MAX_ENVELOPE_BYTES.
+1011
+Error interno no recuperable de la conexión.
+4401
+ws-ticket inválido/expirado o sid revocado.
+4429
+Rate limit WebSocket persistente tras aviso RATE_LIMITED.
+27. Configuración, secretos y límites operativos
+27.1 Variables/configuración v1
+Variable
+Valor inicial / regla
+APP_ENV
+production
+API_PREFIX
+/api/v1
+WS_PATH
+/ws/v1
+DATABASE_URL
+Secreto. PostgreSQL.
+REDIS_URL
+Secreto si incluye credencial. Redis sin persistencia.
+CHAT_JWT_PRIVATE_KEY_FILE
+Ruta Docker secret a clave privada Ed25519.
+CHAT_JWT_PUBLIC_KEYS_DIR
+Directorio de claves públicas por kid.
+CHAT_JWT_ACTIVE_KID
+kid vigente de firma.
+BOOTSTRAP_PUBLIC_KEYS_DIR
+Claves públicas Ed25519 admitidas de la app principal.
+INVITATION_HMAC_SECRET_FILE
+Secreto HMAC-SHA-256 de al menos 32 bytes.
+VAPID_PRIVATE_KEY_FILE
+Secreto Web Push.
+VAPID_PUBLIC_KEY
+Clave pública Web Push.
+VAPID_SUBJECT
+mailto: o URL de contacto operativo.
+SMTP_URL / EMAIL_FROM
+Proveedor para verificación de correo.
+ACCESS_TOKEN_TTL_SECONDS
+86400
+REFRESH_TOKEN_TTL_SECONDS
+2592000
+BOOTSTRAP_MAX_TTL_SECONDS
+300
+WS_TICKET_TTL_SECONDS
+30
+EPHEMERAL_OFFER_TIMEOUT_SECONDS
+60
+EPHEMERAL_DELIVERY_TIMEOUT_SECONDS
+60
+WS_PING_INTERVAL_SECONDS
+25
+WS_DEAD_AFTER_SECONDS
+75
+PRESENCE_TTL_SECONDS
+90
+MAX_MESSAGE_LENGTH
+256 caracteres
+MAX_ENVELOPE_BYTES
+8192
+MAX_HTTP_BODY_BYTES
+131072
+MAX_KEY_TRANSFER_BLOB_BYTES
+65536 bytes antes de Base64URL
+PAGINATION_DEFAULT_LIMIT
+50
+PAGINATION_MAX_LIMIT
+100
+ALLOWED_ORIGINS
+Lista explícita de orígenes HTTPS; nunca * en producción.
+LOG_LEVEL
+INFO
+27.2 Gestión de secretos
+En producción las claves privadas, DATABASE_URL con password, INVITATION_HMAC_SECRET y VAPID private se montan como Docker secrets/archivos con permisos mínimos; no se incluyen en la imagen ni en Git.
+.env solo se permite en desarrollo local. Ningún secreto se imprime en logs, excepciones, métricas ni /health.
+La aplicación valida al arrancar longitud/formato de todos los secretos y falla antes de abrir puertos si falta uno obligatorio.
+OpenAPI /docs y /redoc se deshabilitan públicamente en producción; el esquema puede exponerse solo en red interna o entorno staging.
+27.3 Rate limiting
+Rate limiting se implementa en Redis mediante token bucket/sliding window. Los límites son configurables y se aplican además de los límites de tamaño.
+Operación
+Límite inicial
+REST autenticado general
+120 req/min por usuario; burst 30.
+POST /users/register
+10/h por IP.
+POST /users/resend-verification
+5/h por usuario y 20/h por IP.
+POST /auth/recover
+5/15 min por cuenta + 20/15 min por IP.
+POST /auth/exchange
+30/min por IP; además jti one-time.
+POST /auth/refresh
+30/min por sid.
+POST /invitations/redeem
+30/min por usuario y 60/min por IP.
+POST /auth/ws-ticket
+20/min por sid.
+Mensajes lógicos
+120/min por usuario; burst 20. offer+send de un mismo mensaje cuenta como un único mensaje lógico.
+recovery.replay.item
+100 frames/s por replay; exceso temporal devuelve RATE_LIMITED.
+Si Redis no está disponible, autenticación one-time y mensajería realtime ya no son fiables; readiness pasa a 503 y las operaciones sensibles fallan cerradas.
+27.4 Redis de producción
+appendonly no
+save ""
+maxmemory-policy noeviction
+Redis no usa volumen persistente para datos del chat. Se recomienda tmpfs para /data si la imagen/entorno lo necesita.
+noeviction evita que Redis elimine silenciosamente ciphertext u ofertas activas bajo presión de memoria. Si no puede escribir, la operación falla explícitamente como TEMPORARY_UNAVAILABLE.
+Un valor inicial razonable de maxmemory es 256 MiB en el despliegue 2-4 GiB RAM, pero debe ajustarse con métricas reales.
+28. Consistencia, concurrencia y retención
+28.1 Bloqueos y transacciones
+Operaciones que cambian status/mode/grace_messages_used ejecutan SELECT ... FOR UPDATE sobre conversations dentro de una transacción.
+accept, upgrade, close, leave y creación de message_event se serializan respecto a la misma conversación para impedir carreras de modo/estado.
+El incremento de grace_messages_used y la creación del message_event forman parte de la misma transacción. Un retry idempotente no vuelve a incrementar el contador.
+La creación de ballot usa PRIMARY KEY(vote_id,user_id). Repetir la misma choice devuelve el estado existente; una choice diferente después del primer voto devuelve 409.
+Al votar, el servidor comprueba expires_at contra reloj del servidor aunque el scheduler todavía no haya cerrado formalmente la votación.
+28.2 Fingerprint para idempotencia de message_id
+Para detectar MESSAGE_ID_CONFLICT incluso después de borrar ciphertext ephemeral, message_events añade un fingerprint no reversible del payload cifrado.
+payload_fingerprint = SHA-256(
+  protocol_version_be32 || crypto_meta_raw || ciphertext_raw
+)
+ALTER TABLE message_events
+  ADD COLUMN payload_fingerprint BYTEA NULL
+  CHECK (payload_fingerprint IS NULL OR octet_length(payload_fingerprint) = 32);
+Todo message.send nuevo en producción escribe payload_fingerprint.
+Duplicado con mismo message_id, conversation_id, sender_id y fingerprint devuelve el estado existente y no repite efectos.
+Duplicado con cualquiera de esos campos diferente devuelve MESSAGE_ID_CONFLICT.
+La garantía de deduplicación del servidor dura mientras exista message_events (30 días). El cliente debe tratar UUIDv4 message_id como globalmente no reutilizable para siempre.
+28.3 Retención y limpieza
+Consultas de historial excluyen de forma inmediata cualquier row con content_expires_at<=now(), aunque el worker físico todavía no la haya borrado.
+Worker de limpieza se ejecuta al menos una vez por minuto. Objetivo operativo: lag de purga física <5 minutos; alertar si supera 5 minutos.
+message_events/message_deliveries se purgan a los 30 días. auth_refresh_tokens expiran con la familia y se eliminan después de 30 días adicionales de auditoría técnica del reuse, sin contener tokens en claro.
+email_verification_tokens se borran al usarse o expirar.
+Redis TTL elimina offers, deliveries, ws-tickets y key transfers automáticamente; el código también hace DEL inmediato en éxito/cancelación.
+28.4 Consistencia tras fallo de proceso
+Si una instancia cae durante delivery ephemeral, Redis conserva como máximo el TTL restante. El receptor pierde el socket y no puede ACK; el delivery termina failed/expired.
+Un reconciliador marca message_deliveries pending de ephemeral como failed cuando ya no existe la clave ephemeral:delivery y ha vencido el timeout.
+El emisor que perdió la conexión consulta /messages/{id}/status. Si el estado es failed/expired crea un message_id nuevo para reintentar.
+En stored, PostgreSQL es autoritativo: si message_events+messages committearon, el mensaje existe aunque el WebSocket se cierre antes de la respuesta al emisor; el retry con el mismo message_id recupera el estado sin duplicar.
+29. Plan de pruebas y puertas de calidad
+29.1 Unitarias obligatorias
+Serialización/deserialización Base64URL y layout big-endian exacto de invitaciones; HMAC válido, inválido, truncado y version desconocida.
+JWT EdDSA: kid, iss, aud, iat/nbf/exp, alg substitution y sesión revocada.
+Refresh rotation y reuse detection de toda la token_family_id.
+Argon2id + normalización NFKD de BIP-39.
+majority_absolute para 2/3/5/10 miembros y ausencia de voto=NO.
+Transiciones de conversación y prohibición stored→ephemeral.
+Idempotencia de message_id y MESSAGE_ID_CONFLICT por fingerprint.
+Límites de gracia, permisos host/guest y visibilidad pending.
+Expiración de offer/delivery/key transfer/ws-ticket.
+29.2 Integración obligatoria
+FastAPI + PostgreSQL + Redis reales en contenedores de test.
+Flujo register→verify→keys→invitation→redeem→grace→accept→vote.
+Ephemeral completo offer→ready→send→new→ack→DEL Redis→delivered.
+Ephemeral con B offline, timeout de offer, desconexión entre send y ack y caída de proceso.
+Stored online y offline con recuperación por REST y limpieza por expiry.
+Upgrade concurrente con offers/sends; cierre concurrente con send; grace_message_limit bajo concurrencia.
+ws-ticket one-time, expirado, reutilizado y sid revocado con cierre del socket.
+Transferencia de claves: upload/download/delete/TTL y tamaño máximo.
+Web Push generado sin texto/ciphertext.
+29.3 Seguridad y robustez
+Fuzzing de invitation token, cursores, Base64URL, JWT y envelopes JSON.
+Rechazo de frames binarios, payload sobredimensionado, campos extra, UUID inválido y protocol_version desconocido.
+Comprobación automática de que logs no contienen access/refresh/bootstrap tokens, recovery mnemonic, ciphertext, crypto_meta, invite code completo ni secretos.
+Pruebas de rate limiting y fail-closed cuando Redis no está disponible.
+Pruebas de autorización horizontal: un usuario no puede leer conversación, voto, status, key transfer o clave de otro sin relación permitida.
+29.4 CI mínima antes de merge/release
+Gate
+Criterio
+Tests
+pytest sin fallos.
+Cobertura
+>=85 % global y >=90 % en auth, invitations, delivery y voting.
+Lint
+ruff sin errores.
+Tipos
+mypy en modo estricto para código de dominio/API.
+Dependencias
+pip-audit sin vulnerabilidades críticas/altas no aceptadas explícitamente.
+Secretos
+Escaneo de secretos; ningún secreto real en repo/imagen.
+Contenedor
+Escaneo de imagen sin vulnerabilidades críticas conocidas sin excepción documentada.
+Migraciones
+Crear BD desde cero y migrar desde la versión anterior en CI.
+E2E
+Suite de criterios de aceptación de sección 22 completa.
+Carga
+Antes de producción, prueba a >=2x del pico concurrente estimado; sin pérdida silenciosa ni duplicados. Los objetivos de latencia se fijan tras medir hardware real.
+30. Despliegue, observabilidad y recuperación operativa
+30.1 Topología de producción inicial
+Docker Compose en un host Ubuntu Server. Solo Caddy publica 80/443; FastAPI, PostgreSQL y Redis permanecen en red interna Docker.
+Puerto 80 solo redirige a HTTPS. Producción acepta REST por HTTPS y WebSocket por WSS.
+FastAPI y Caddy se ejecutan sin privilegios innecesarios. PostgreSQL usa volumen persistente; Redis no usa almacenamiento persistente.
+Firewall del host permite únicamente administración necesaria y 80/443 públicos. PostgreSQL/Redis no se exponen a Internet.
+Imágenes y dependencias se fijan a versiones concretas; las actualizaciones pasan por CI antes de despliegue.
+30.2 Migraciones y despliegue
+Alembic es la herramienta de migración de referencia para FastAPI/Python.
+La migración se ejecuta una sola vez antes de levantar la nueva versión de aplicación. Si falla, no se arranca la versión nueva.
+Cambios destructivos se dividen en dos releases cuando sea necesario: primero compatibilidad, después eliminación.
+En SIGTERM la instancia marca readiness=false, deja de aceptar ws-tickets/nuevos sockets, permite hasta 15 s a entregas en vuelo y después cierra sockets con 1001. Redis TTL/reconciliación resuelven los pendientes restantes.
+Rollback preferido: volver a la imagen anterior siempre que el esquema siga siendo backward-compatible; no se hace downgrade destructivo automático de la BD.
+30.3 Logs y métricas
+Logs estructurados JSON a stdout con timestamp, level, service, request_id, endpoint/event_type, status/error_code y IDs técnicos necesarios.
+Nunca registrar: access/refresh/bootstrap token, recovery mnemonic, private keys, secrets, invite code completo, verification token, ciphertext, crypto_meta ni key-transfer blob.
+Retención inicial de logs: 14 días.
+Métricas Prometheus internas: latencia/errores REST, conexiones WS activas, offers/ready/delivered/failed, timeouts, Redis memory, PostgreSQL pool, cleanup lag, refresh reuse detections y Web Push failures.
+Las métricas no llevan nick, email ni contenido de mensajes como labels.
+30.4 Alertas iniciales
+Condición
+Alerta
+readiness=fail >2 min
+Crítica.
+HTTP 5xx >5 % durante 5 min
+Alta.
+Redis/PostgreSQL inaccesible
+Crítica.
+Disco >80 %
+Alta; >90 % crítica.
+RAM host >85 % sostenida 10 min
+Alta.
+Redis maxmemory write failures
+Crítica.
+Cleanup lag >5 min
+Alta.
+Aumento anómalo de REFRESH_REUSE_DETECTED
+Alta / posible incidente.
+Certificado TLS próximo a expirar
+Alta si <14 días; Caddy normalmente renueva automáticamente.
+30.5 Backups compatibles con la retención del chat
+Para no conservar ciphertext temporal más allá de su política, producción realiza backup lógico únicamente de datos durables. El contenido de mensajes y otros datos TTL no entran en copias de larga duración.
+Backup de datos durables cada 6 horas, cifrado, con 7 días de snapshots frecuentes y 4 snapshots semanales.
+Incluir: users, user_keys (solo públicas), invitations, conversations, conversation_members y esquema/migraciones. web_push_subscriptions puede incluirse si el backup está cifrado.
+Excluir datos de backup durable: messages, message_events, message_deliveries, auth_sessions, auth_refresh_tokens, email_verification_tokens, votes y vote_ballots.
+Consecuencia aceptada: ante pérdida total de PostgreSQL, el historial stored temporal puede perderse y todos los usuarios deben reautenticarse. Se prioriza la semántica de retención y simplicidad sobre respaldar contenido temporal.
+Prueba de restauración al menos una vez al mes. Objetivo de recuperación de metadatos durables: RPO <=6 h y RTO <=2 h en el despliegue inicial.
+30.6 Health y mantenimiento
+/health/live no consulta dependencias; evita reinicios en cascada por una caída externa.
+/health/ready comprueba una query mínima PostgreSQL y PING Redis con timeout corto. Si falla, Caddy/orquestación no debe enviar tráfico nuevo a esa instancia.
+Tareas programadas: cleanup de expirados cada minuto, cierre de votos vencidos, reconciliación de deliveries ephemeral y limpieza de sesiones/tokens.
+El reloj del host se sincroniza por NTP. Una deriva >2 s debe generar aviso porque afecta expiraciones y validación JWT.
+30.7 Caddy y superficie pública
+TLS automático de Caddy; solo TLS moderno permitido por configuración por defecto actualizada.
+HSTS: Strict-Transport-Security: max-age=31536000 en el dominio dedicado del chat.
+CORS: únicamente ALLOWED_ORIGINS explícitos; no wildcard en producción.
+Límite de body HTTP 128 KiB y timeouts razonables a nivel proxy; WebSocket upgrade permitido solo en /ws/v1.
+No se publican PostgreSQL, Redis, /metrics ni documentación interactiva.
+30.8 Respuesta a compromiso de claves
+Clave
+Acción
+Chat JWT private
+Generar kid nuevo, retirar inmediatamente kid comprometido, revocar todas las sesiones y forzar autenticación nueva.
+Bootstrap private de main-app
+Main app rota clave; Chat API deja de aceptar el kid comprometido. Bootstrap emitidos con él quedan inválidos.
+INVITATION_HMAC_SECRET
+Rotar secreto y regenerar/inutilizar todas las invitaciones existentes.
+VAPID private
+Rotar par VAPID y requerir nueva suscripción Push.
+DATABASE/Redis credential
+Rotar credencial, reiniciar servicios dependientes y revisar logs/alcance.
+31. Checklist final de salida a producción
+Todas las migraciones aplicadas y esquema validado, incluyendo auth_refresh_tokens y payload_fingerprint.
+Claves Ed25519 distintas para Chat JWT y bootstrap; kid activo configurado y claves antiguas de verificación controladas.
+INVITATION_HMAC_SECRET y VAPID cargados desde secrets, no desde el repositorio.
+Caddy HTTPS/WSS operativo, CORS restringido y PostgreSQL/Redis no expuestos.
+Redis con appendonly no, save "" y maxmemory-policy noeviction.
+Email verification, Web Push y ws-ticket probados en el entorno de producción/staging equivalente.
+Suite unit/integration/E2E/concurrency/security en verde y migración probada desde cero.
+Load test ejecutado a al menos 2x del pico previsto sin duplicados, pérdida silenciosa ni corrupción de estados.
+Logs revisados para confirmar ausencia de secretos/ciphertext y métricas/alertas activas.
+Backup lógico durable funcionando y restauración de prueba completada.
+Cleanup/retención verificados: contenido expirado no es recuperable por API y el lag físico se mantiene bajo el umbral.
+Procedimiento de rollback y rotación de claves disponible para el operador.
+Con estos puntos cumplidos, la documentación de producción v1 se considera cerrada para implementación y despliegue del MVP.

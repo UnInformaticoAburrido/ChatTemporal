@@ -1,0 +1,33 @@
+# DEC-08: sin access log del proxy: la URI WS contiene ticket one-time.
+# Los logs HTTP seguros los emite Python, sin querystring ni bodies.
+request_body {
+	max_size 131072
+}
+@internal path /metrics /health/ready /docs /docs/* /redoc /openapi.json
+respond @internal 404
+
+@wrong_upgrade {
+	header Upgrade websocket
+	not path /ws/v1
+}
+respond @wrong_upgrade 404
+
+@api path /api/v1/* /ws/v1 /health/live
+handle @api {
+	reverse_proxy python:8000 {
+		health_uri /health/ready
+		health_interval 5s
+		health_timeout 2s
+		health_status 200
+		fail_duration 5s
+		max_fails 1
+		unhealthy_status 503
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 15s
+		}
+	}
+}
+handle {
+	respond 404
+}

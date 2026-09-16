@@ -1,0 +1,28 @@
+# Valores normativos §27.1. DEC-10: TOML público y secrets por archivo.
+api_prefix = "/api/v1"
+ws_path = "/ws/v1"
+chat_jwt_active_kid = "chat-local-1"
+allowed_origins = ["https://chat.example.invalid"]
+vapid_public_key = "CONFIGURAR"
+vapid_subject = "mailto:operaciones@example.invalid"
+email_from = "chat@example.invalid"
+access_token_ttl_seconds = 86400
+refresh_token_ttl_seconds = 2592000
+bootstrap_max_ttl_seconds = 300
+ws_ticket_ttl_seconds = 30
+ephemeral_offer_timeout_seconds = 60
+ephemeral_delivery_timeout_seconds = 60
+ws_ping_interval_seconds = 25
+ws_dead_after_seconds = 75
+presence_ttl_seconds = 90
+max_message_length = 256
+max_envelope_bytes = 8192
+max_http_body_bytes = 131072
+max_key_transfer_blob_bytes = 65536
+pagination_default_limit = 50
+pagination_max_limit = 100
+log_level = "INFO"
+# DEC-11: espera activa acotada y limpieza cada 30 s (<1 min de §28.3).
+startup_timeout_seconds = 120
+dependency_timeout_seconds = 2
+cleanup_interval_seconds = 30

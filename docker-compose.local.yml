@@ -1,0 +1,25 @@
+# DEC-05: excepción exclusivamente local. Producción siempre usa HTTPS/WSS.
+services:
+  migrate:
+    environment:
+      APP_ENV: development
+      CHAT_LOCAL_HTTP_PORT: "${CHAT_HTTP_PORT:-18080}"
+    volumes:
+      - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
+  python:
+    environment:
+      APP_ENV: development
+      CHAT_LOCAL_HTTP_PORT: "${CHAT_HTTP_PORT:-18080}"
+    volumes:
+      - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
+  worker:
+    environment:
+      APP_ENV: development
+      CHAT_LOCAL_HTTP_PORT: "${CHAT_HTTP_PORT:-18080}"
+    volumes:
+      - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
+  caddy:
+    # DEC-22: 8080 del host ya está ocupado; puerto local configurable, solo loopback.
+    # Caddy sigue escuchando en 8080 dentro del contenedor.
+    ports: !override ["127.0.0.1:${CHAT_HTTP_PORT:-18080}:8080"]
+    command: [caddy, run, --config, /etc/caddy/Caddyfile.local, --adapter, caddyfile]

@@ -1,0 +1,9 @@
+{
+	admin 127.0.0.1:2019
+	auto_https off
+	import /etc/caddy/logging.caddy
+}
+
+http://:8080 {
+	import /etc/caddy/routes.caddy
+}

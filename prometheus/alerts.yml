@@ -1,0 +1,18 @@
+groups:
+  - name: chat-infrastructure
+    rules:
+      - alert: ChatNotReady
+        expr: chat_ready == 0 or up{job="chat"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Chat no disponible durante más de 2 minutos"
+      - alert: ChatCleanupStalled
+        expr: chat_cleanup_age_seconds > 300
+        for: 1m
+        labels:
+          severity: high
+        annotations:
+          summary: "No se completó la limpieza en los últimos 5 minutos"
+      # DEC-12: reglas iniciales; notificaciones/exporters restantes son puerta N8.

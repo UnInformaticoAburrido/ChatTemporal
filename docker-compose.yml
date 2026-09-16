@@ -1,0 +1,245 @@
+# DEC-01: Compose base de producción; el modo local se añade explícitamente.
+# Fuentes montados read-only: se editan en el host y no desde el contenedor.
+name: chat
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-python: &python
+  image: chat-python:0.1.0
+  build:
+    context: ./python
+    target: runtime
+  working_dir: /app
+  user: "1000:1000"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  # Las comas son opciones de un solo montaje; usar lista de bloque para que YAML
+  # no interprete mode=1777 como otra ruta (error invalid mount path del daemon).
+  tmpfs:
+    - /tmp:size=16m,mode=1777
+  volumes:
+    - ./python:/app:ro
+    - ./BD/postgresql/migrations:/migrations:ro
+    - ./python/config/settings.toml:/etc/chat/settings.toml:ro
+    - ./secrets/chat-public:/run/chat-public:ro
+    - ./secrets/bootstrap-public:/run/bootstrap-public:ro
+  environment:
+    APP_ENV: production
+    CHAT_SETTINGS_FILE: /etc/chat/settings.toml
+    DATABASE_URL_FILE: /run/secrets/database_url
+    REDIS_URL_FILE: /run/secrets/redis_url
+    CHAT_JWT_PRIVATE_KEY_FILE: /run/secrets/chat_jwt_private
+    CHAT_JWT_PUBLIC_KEYS_DIR: /run/chat-public
+    BOOTSTRAP_PUBLIC_KEYS_DIR: /run/bootstrap-public
+    INVITATION_HMAC_SECRET_FILE: /run/secrets/invitation_hmac
+    VAPID_PRIVATE_KEY_FILE: /run/secrets/vapid_private
+    SMTP_URL_FILE: /run/secrets/smtp_url
+  secrets:
+    - database_url
+    - redis_url
+    - chat_jwt_private
+    - invitation_hmac
+    - vapid_private
+    - smtp_url
+  networks: [backend, egress]
+  logging: *logging
+  stop_grace_period: 25s
+
+services:
+  postgresql:
+    image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chat
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres_password]
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data
+      - ./BD/postgresql/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: [postgres, -c, config_file=/etc/postgresql/postgresql.conf]
+    healthcheck:
+      # TCP evita dar por listo el servidor temporal de docker-entrypoint.
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U chat -d chat"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    networks: [backend]
+    logging: *logging
+    shm_size: 128mb
+
+  redis:
+    image: redis:8.6.6-alpine@sha256:75934ddb37bfaebe3b4082ba673cac39f66495244134f33dd0a502ce03cdcd36
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # §27.4: jamás volumen durable para Redis; incluye reinicios del host.
+    tmpfs:
+      - /data:uid=1000,gid=1000,size=16m,mode=0700
+      - /tmp:size=4m,mode=1777
+    volumes:
+      - ./BD/redis:/etc/redis:ro
+    secrets: [redis_password]
+    command: [sh, /etc/redis/start.sh]
+    healthcheck:
+      test: [CMD, sh, /etc/redis/healthcheck.sh]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 384m
+    networks: [backend]
+    logging: *logging
+
+  migrate:
+    <<: *python
+    restart: "no"
+    command: [python, -m, chat.bootstrap, migrate]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  python:
+    <<: *python
+    restart: unless-stopped
+    command: [python, -m, chat.bootstrap, api]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, chat.healthcheck, api]
+      interval: 5s
+      timeout: 4s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    <<: *python
+    restart: unless-stopped
+    # DEC-02: proceso separado, mismo código python; no scheduler por worker HTTP.
+    command: [python, -m, chat.bootstrap, worker]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, chat.healthcheck, worker]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+      start_period: 15s
+
+  caddy-init:
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    restart: "no"
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    network_mode: none
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # DEC-03: solo inicializa permisos de los dos volúmenes propios y termina.
+    entrypoint: [sh, /etc/caddy/init-volumes.sh]
+
+  caddy:
+    image: chat-caddy:0.1.0
+    build:
+      context: ./caddy
+    restart: unless-stopped
+    # DEC-03/24: puertos altos y binario sin file capabilities para poder usar cap_drop ALL.
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    ports: ["80:8080", "443:8443"]
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      caddy-init:
+        condition: service_completed_successfully
+      python:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      # DEC-23: comprobación local sin proxy, con timeout y error visible en inspect.
+      test: [CMD, sh, /etc/caddy/healthcheck.sh]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    networks: [backend, egress]
+    logging: *logging
+
+  prometheus:
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    # DEC-04: perfil opcional mientras se desarrolla; obligatorio antes de N9.
+    profiles: [observability]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=14d
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      python:
+        condition: service_healthy
+    networks: [backend]
+    logging: *logging
+
+networks:
+  backend:
+    internal: true
+  # Salida para ACME, SMTP y Web Push; no publica puertos adicionales.
+  egress: {}
+
+volumes:
+  postgresql_data: {}
+  caddy_data: {}
+  caddy_config: {}
+  prometheus_data: {}
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  database_url:
+    file: ./secrets/database_url
+  redis_password:
+    file: ./secrets/redis_password
+  redis_url:
+    file: ./secrets/redis_url
+  chat_jwt_private:
+    file: ./secrets/chat_jwt_private.pem
+  invitation_hmac:
+    file: ./secrets/invitation_hmac
+  vapid_private:
+    file: ./secrets/vapid_private.pem
+  smtp_url:
+    file: ./secrets/smtp_url

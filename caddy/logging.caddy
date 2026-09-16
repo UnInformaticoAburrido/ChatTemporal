@@ -1,0 +1,12 @@
+# DEC-08: también filtrar errores de runtime, no solo omitir access logs.
+log default {
+	output stdout
+	format filter {
+		wrap json
+		fields {
+			request>uri delete
+			request>headers delete
+			resp_headers delete
+		}
+	}
+}

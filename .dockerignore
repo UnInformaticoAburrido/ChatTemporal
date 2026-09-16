@@ -1,0 +1,9 @@
+.git
+.agents
+.codex
+.env*
+secrets
+backups
+artifacts
+**/__pycache__
+**/.pytest_cache

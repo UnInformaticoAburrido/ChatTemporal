@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/README.md
+!secrets/.gitkeep
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+.venv/
+.coverage*
+htmlcov/
+artifacts/
+backups/
+python/config/settings.local.toml

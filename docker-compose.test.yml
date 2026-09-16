@@ -1,0 +1,18 @@
+services:
+  tests:
+    extends:
+      file: docker-compose.yml
+      service: python
+    image: chat-python-tests:0.1.0
+    build:
+      context: ./python
+      target: test
+    restart: "no"
+    environment:
+      APP_ENV: test
+      RUN_INTEGRATION: "1"
+    volumes:
+      - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
+    command: [python, -m, pytest, -q, -m, integration, -p, no:cacheprovider]
+    healthcheck:
+      disable: true
