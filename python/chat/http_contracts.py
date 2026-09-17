@@ -1,5 +1,7 @@
 """Parte de N3 necesaria para publicar N2 respetando §23 desde el primer endpoint."""
 
+import json
+
 import psycopg
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,6 +10,7 @@ from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from chat.errors import APIError
+from chat.protocol import invalid_json_constant, unique_json_object
 
 
 def error_response(request_id: str, status: int, code: str, message: str) -> JSONResponse:
@@ -27,7 +30,8 @@ def install_handlers(app: FastAPI) -> None:
         status = 400 if "json_invalid" in types else 422
         # DEC-43: §23 no asigna código al error general de validación. Se añade
         # VALIDATION_ERROR; UNKNOWN_FIELD mantiene el código prescrito para extras.
-        code = "UNKNOWN_FIELD" if "extra_forbidden" in types else "VALIDATION_ERROR"
+        code = ("UNKNOWN_FIELD" if "extra_forbidden" in types else "UNSUPPORTED_PROTOCOL_VERSION"
+                if "unsupported_protocol_version" in types else "VALIDATION_ERROR")
         return error_response(request.state.request_id, status, code, "Invalid request.")
 
     @app.exception_handler(HTTPException)
@@ -72,13 +76,25 @@ class BodyLimit:
             chunks.append(body)
             if not message.get("more_body", False):
                 break
+        body = b"".join(chunks)
+        content_type = dict(scope.get("headers", [])).get(b"content-type", b"").split(b";", 1)[0].strip().lower()
+        if body and (not content_type or content_type == b"application/json" or content_type.endswith(b"+json")):
+            try:
+                # DEC-51: claves repetidas también son ambiguas, aunque no sean
+                # campos extra. Rechazar antes de que el parser conserve la última.
+                json.loads(body.decode("utf-8"), object_pairs_hook=unique_json_object, parse_constant=invalid_json_constant)
+            except (ValueError, UnicodeError, RecursionError):
+                response = error_response(scope.get("state", {}).get("request_id", ""), 400,
+                                          "VALIDATION_ERROR", "Invalid JSON body.")
+                await response(scope, receive, send)
+                return
         delivered = False
 
         async def replay() -> Message:
             nonlocal delivered
             if not delivered:
                 delivered = True
-                return {"type": "http.request", "body": b"".join(chunks), "more_body": False}
+                return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
         await self.app(scope, replay, send)

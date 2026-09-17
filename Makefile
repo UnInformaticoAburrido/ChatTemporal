@@ -29,4 +29,4 @@ test:
 	cd python && python -m pytest -m 'not integration'
 
 check:
-	cd python && ruff check . && mypy chat
+	cd python && ruff check . && mypy chat chat_client

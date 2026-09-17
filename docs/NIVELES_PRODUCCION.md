@@ -16,7 +16,7 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 | N0 · Infraestructura | — | Compose, redes, secrets, fuentes montados, healthchecks, cadena de arranque | Arranque en limpio, fallo de dependencia, migración fallida y reinicio sin Compose comprobados en contenedores | Implementado; falta validación real de contenedores |
 | N1 · Persistencia | N0 | Alembic, esquema §§17/24.3/28.2, índices, constraints, repositorios y transacciones | BD desde cero y actualización 0001→0002; unicidad y retención | Repositorios base y transacciones implementados; migraciones, concurrencia y retención probadas con servicios locales reales. Pendiente completar repositorios por flujo y validar versiones Compose |
 | N2 · Identidad y seguridad | N1 | Registro/verificación/recuperación, sesiones, bootstrap, JWT, rate limiting | Claims, expiración, reuse, revocación y aislamiento probados | REST y persistencia implementadas; pruebas de seguridad con BD/Redis reales. Pendientes proveedor SMTP real, cierre de sockets en N5 y versiones Compose |
-| N3 · Claves y contratos | N2 | Pública vigente, DTOs estrictos, errores, cursor, autorización, CORS | Protocolos/bytes correctos; fuzzing y accesos horizontales rechazados | DTOs/errores HTTP de identidad, límite de body y CORS; claves, cursores y contratos restantes pendientes |
+| N3 · Claves y contratos | N2 | Pública vigente, DTOs estrictos, errores, cursor, autorización, CORS | Protocolos/bytes correctos; fuzzing y accesos horizontales rechazados | Implementado y probado con servicios reales locales; cliente criptográfico de referencia y lecturas paginadas. Pendientes plataforma cliente final y homologación Compose/staging |
 | N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | Pendiente |
 | N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Pendiente |
 | N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Pendiente |
@@ -113,9 +113,9 @@ devuelve 503 y revierte el registro, sin generar cuentas a medias.
 Todavía no hay `/ws/v1` funcional: N5 consumirá tickets con GETDEL, escuchará
 revocaciones y cerrará sockets; emitir un ticket no habilita mensajería. Los límites
 de invitaciones/mensajes/replay están configurados para conectarlos a sus futuros
-handlers. N2 no se declara homologado para producción. El siguiente desarrollo
-es **N3: claves públicas, cursores y contratos/autorización restantes**, conservando
-las puertas operativas pendientes. Decisiones: DEC-31–DEC-44; resultados en VALIDACION.md.
+handlers. N2 no se declara homologado para producción. La continuación N3 figura
+abajo; se conservan las puertas operativas pendientes.
+Decisiones: DEC-31–DEC-44; resultados en VALIDACION.md.
 
 ## N3 · Contratos y claves (§§5, 23, 25.1/25.3)
 
@@ -129,6 +129,33 @@ las puertas operativas pendientes. Decisiones: DEC-31–DEC-44; resultados en VA
   bytes cifrados y estructura, sin intentar descifrar ni contar texto.
 - Cursor estable `(updated_at,id)` o `(sent_at,id)`; límites 50/100, permisos
   independientes del cursor. Pruebas de errores, bytes, fuzzing y privacidad.
+
+### Continuación N3 · 2026-09-17
+
+Implementadas alta/sustitución, rotación y consulta autorizada de la pública vigente.
+Los DTOs validan bytes/versiones y mantienen identidad oculta durante pending,
+incluso al consultar claves. La lectura de conversaciones y el historial stored
+ya tienen cursor opaco, desempate por UUID, límites 50/100 y autorización en cada
+consulta; leave y revocación de sesión impiden continuar. Se excluye contenido
+caducado sin esperar al worker. Estos GET adelantan la lectura de N4/N5, sin
+añadir creación de conversaciones ni envío REST.
+
+`python/chat_client/crypto.py` implementa el cliente criptográfico de referencia:
+Curve25519/X25519, crypto_box_easy/open_easy, nonce de 24 bytes y metadatos de 56.
+Su límite de texto es configurable, con 256 puntos de código Unicode por defecto.
+La API no importa este módulo ni recibe privadas. El parser estricto de
+message.send queda preparado para N5; aún no hay `/ws/v1` funcional ni UI cliente.
+
+Evidencia: **70 pruebas unitarias y 28 de integración (98 total)**, Ruff y mypy
+estricto de servidor/cliente. Incluyen interoperabilidad libsodium, alteración de
+ciphertext, fuzz determinista de binarios/cursores, JSON ambiguo, CORS, rotación
+concurrente, paginación con fechas empatadas y accesos horizontales rechazados.
+Servicios temporales PostgreSQL 18.6/Redis 8.0.5; las versiones exactas de Compose,
+SMTP real, WS, CI/cobertura y staging siguen pendientes. N3 no certifica producción.
+
+El siguiente desarrollo es **N4: invitaciones y transiciones de conversación**.
+No hay nueva migración ni dependencia de runtime del servidor en N3.
+Decisiones no prescritas: DEC-45–DEC-52; detalle reproducible en VALIDACION.md.
 
 ## N4 · Invitaciones y conversaciones (§§6–9, 25.4/25.6, 28.1)
 

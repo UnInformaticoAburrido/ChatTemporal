@@ -1,7 +1,7 @@
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,8 @@ from chat.identity import Identity
 from chat.identity_api import identity_router
 from chat.logging import event
 from chat.mailer import Mailer
+from chat.protocol import uuid4_value
+from chat.resource_api import resource_router
 
 
 def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None) -> FastAPI:
@@ -28,7 +30,7 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
         app.state.draining = True
 
     application = FastAPI(
-        title="Chat · identidad y persistencia", version="0.2.0",
+        title="Chat · identidad, claves y contratos", version="0.3.0",
         docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
     )
     application.state.draining = False
@@ -46,7 +48,7 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
     @application.middleware("http")
     async def correlate(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         try:
-            request_id = str(UUID(request.headers.get("X-Request-ID", "")))
+            request_id = str(uuid4_value(request.headers.get("X-Request-ID", "")))
         except ValueError:
             request_id = str(uuid4())
         request.state.request_id = request_id
@@ -57,6 +59,13 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
                 "code": "INTERNAL_ERROR", "message": "Internal error.",
                 "request_id": request_id, "details": {},
             }})
+            # DEC-49: esta respuesta nace fuera del middleware CORS interior;
+            # conservar su misma lista explícita también ante un fallo inesperado.
+            origin = request.headers.get("Origin")
+            if origin in settings.allowed_origins:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Expose-Headers"] = "X-Request-ID"
+                response.headers["Vary"] = "Origin"
         response.headers["X-Request-ID"] = request_id
         if request.url.path.startswith(settings.api_prefix + "/"):
             response.headers["Cache-Control"] = "no-store"
@@ -88,5 +97,7 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
         return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
     install_handlers(application)
-    application.include_router(identity_router(Identity(settings, mailer=mailer), settings))
+    identity = Identity(settings, mailer=mailer)
+    application.include_router(identity_router(identity, settings))
+    application.include_router(resource_router(identity, settings))
     return application

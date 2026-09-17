@@ -72,7 +72,7 @@ class Conversation:
 @dataclass(frozen=True)
 class StoredMessage:
     id: UUID
-    sender_role: str
+    sender_role: Literal["host", "guest"]
     sent_at: datetime
     protocol_version: int
     ciphertext: bytes = field(repr=False)
@@ -287,6 +287,7 @@ class Messages:
 
     async def history(
         self, conversation_id: UUID, user_id: UUID, *, limit: int = 50, before: Position | None = None,
+        include_next: bool = False,
     ) -> list[StoredMessage]:
         validate_limit(limit)
         # DEC-28: el permiso se comprueba en cada consulta, independiente del cursor.
@@ -304,7 +305,7 @@ class Messages:
                 AND (%s::timestamptz IS NULL OR (e.sent_at,e.id)<(%s,%s::uuid))
                 ORDER BY e.sent_at DESC,e.id DESC LIMIT %s""",
                 (user_id, conversation_id, before.timestamp if before else None,
-                 before.timestamp if before else None, before.id if before else None, limit),
+                 before.timestamp if before else None, before.id if before else None, limit + int(include_next)),
             )
             return await cursor.fetchall()
 

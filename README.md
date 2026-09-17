@@ -1,9 +1,10 @@
 # Servidor de chat · identidad, persistencia y niveles de desarrollo
 
 Base creada a partir de la **especificación maestra de producción v1**. Incluye
-infraestructura, migraciones, persistencia e identidad REST. Ya existen registro,
-verificación, recuperación, sesiones y edición de perfil. **El MVP completo del
-chat sigue pendiente**: aún no hay claves públicas, invitaciones ni mensajería.
+infraestructura, migraciones, identidad REST, claves públicas y lecturas paginadas.
+Ya existen registro, verificación, recuperación, sesiones y edición de perfil.
+**El MVP completo del chat sigue pendiente**: aún no hay invitaciones ni envíos
+por WebSocket. El siguiente nivel es N4.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -119,7 +120,7 @@ python3 -m venv .venv
 cd python
 ../.venv/bin/python -m pytest -q -m 'not integration'
 ../.venv/bin/ruff check .
-../.venv/bin/mypy chat
+../.venv/bin/mypy chat chat_client
 ```
 
 Las pruebas unitarias de configuración generan secretos temporales y necesitan
@@ -129,8 +130,9 @@ aislado `chat-tests`, no publica puertos y conserva sus volúmenes al terminar.
 
 La continuación de N1 añade transacciones, escritura idempotente de mensajes y
 lectura de historial con caducidad/pertenencia. N2 añade las API de identidad y
-sus pruebas de concurrencia. La mensajería sigue siendo un componente interno.
-Las decisiones no fijadas por la especificación se explican en DEC-25–DEC-44.
+sus pruebas de concurrencia. N3 añade claves, contratos estrictos, lecturas
+paginadas y cliente criptográfico de referencia. El envío sigue siendo una
+primitiva interna. Las decisiones se explican en DEC-25–DEC-52.
 
 Si Docker no está disponible y ya tienes binarios PostgreSQL/Redis y el entorno
 Python de pruebas, puedes ejecutar una alternativa aislada:
@@ -168,6 +170,40 @@ solo no instala las nuevas bibliotecas. SMTP_URL acepta `smtp://` con STARTTLS o
 `smtps://` con TLS implícito. Configura credenciales en el archivo secreto, nunca en
 Git. El correo contiene el código para `/users/verify-email`; aún no hay una página
 web de confirmación. Las pruebas de identidad capturan correo sin enviar a terceros.
+
+## Claves y contratos (N3)
+
+Rutas autenticadas bajo `/api/v1`, con cuota general y sesión vigente:
+
+| Rutas | Comportamiento |
+|---|---|
+| PUT `/users/me/keys` | Crea o sustituye `{public_key, protocol_version:1}`; pública de 32 bytes en Base64URL sin padding |
+| POST `/users/me/keys/rotate` | Reemplaza la pública existente; conserva una sola fila por usuario |
+| GET `/users/{id}/keys` | Solo propia o con conversación compartida permitida; no devuelve nick ni id del propietario |
+| GET `/conversations`, `/conversations/{id}` | Listado/detalle autorizado; `peer=null` hasta aceptación |
+| GET `/conversations/{id}/messages` | Ciphertext stored no caducado; ephemeral devuelve 409 HISTORY_NOT_STORED |
+
+Listados: `?limit=50&cursor=...`, máximo 100, respuesta `{items, next_cursor}`.
+`next_cursor=null` indica fin. El cursor no concede permisos y no debe modificarse
+ni reutilizarse en otro historial. El orden descendente desempata por UUID; el
+listado de conversaciones puede cambiar si reciben actividad entre páginas.
+
+Cliente de referencia local, desde `python/` con dependencias de desarrollo
+instaladas (o `pip install -r requirements-client.lock`):
+
+```python
+from chat_client.crypto import KeyPair, encrypt_text, decrypt_text
+
+alice, bob = KeyPair.generate(), KeyPair.generate()
+message = encrypt_text("Hola", alice, bob.public_key)
+assert decrypt_text(message, bob) == "Hola"
+```
+
+Este módulo no guarda privadas ni llama a la red. El cliente final deberá proteger
+su almacenamiento local e integrar la UI. `max_characters` permite cambiar el
+límite local de 256; el servidor solo valida estructura y bytes cifrados.
+`parse_message_send` prepara el contrato futuro, sin habilitar envío WS todavía.
+Las pruebas de lectura crean conversaciones mediante fixtures hasta implementar N4.
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con

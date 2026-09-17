@@ -36,6 +36,12 @@ en esos archivos puede afectar al contenedor: usar checkout/directorio de releas
 controlado, sin editar producción mientras atiende tráfico. No son imágenes
 autocontenidas del código; el rollback incluye fuentes, configuración e imagen.
 
+N3 mantiene el esquema **0003_email_hash** y las dependencias de runtime de N2.
+Si ya se aplicó N2, reiniciar `python` después de actualizar fuentes/configuración
+para cargar rutas y contratos; no hay autoreload. La imagen de test sí debe
+reconstruirse: requirements-dev.lock incluye el cliente de referencia PyNaCl
+mediante requirements-client.lock. No instalar esa dependencia en la API.
+
 En este despliegue inicial se admite una ventana breve de mantenimiento:
 
 ```bash

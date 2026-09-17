@@ -10,6 +10,6 @@ CMD ["python", "-m", "chat.bootstrap", "api"]
 
 FROM runtime AS test
 USER root
-COPY requirements-dev.lock /tmp/requirements-dev.lock
+COPY requirements-dev.lock requirements-client.lock /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements-dev.lock
 USER 1000:1000

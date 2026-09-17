@@ -1,0 +1,4 @@
+# DEC-50: libsodium únicamente para cliente de referencia/pruebas, no para la API.
+cffi==2.1.1
+pycparser==3.0
+PyNaCl==1.6.2

@@ -57,6 +57,7 @@ class Settings(BaseModel):
     presence_ttl_seconds: int = Field(default=90, gt=0, le=90)
     max_message_length: int = Field(default=256, gt=0)
     max_envelope_bytes: int = Field(default=8192, gt=0)
+    max_ciphertext_bytes: int = Field(default=4096, ge=16)
     max_http_body_bytes: int = Field(default=131072, gt=0, le=131072)
     max_key_transfer_blob_bytes: int = Field(default=65536, gt=0, le=65536)
     pagination_default_limit: int = Field(default=50, gt=0)

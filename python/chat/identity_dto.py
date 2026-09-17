@@ -1,11 +1,12 @@
 """Contratos de identidad de §25.2; extras prohibidos y respuestas sin hashes."""
 
-from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 from email_validator import EmailNotValidError, validate_email
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from chat.protocol import UTCDateTime
 
 Nick = Annotated[str, Field(pattern=r"^[A-Za-z0-9_]{3,32}$", min_length=3, max_length=32)]
 
@@ -75,8 +76,8 @@ class UserPrivate(StrictDTO):
     email: str = Field(repr=False)
     email_verified: bool
     is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
 
 
 class UserPublic(StrictDTO):
@@ -92,4 +93,4 @@ class Registered(StrictDTO):
 
 class Ticket(StrictDTO):
     ticket: str = Field(repr=False)
-    expires_at: datetime
+    expires_at: UTCDateTime

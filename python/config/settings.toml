@@ -17,6 +17,8 @@ ws_dead_after_seconds = 75
 presence_ttl_seconds = 90
 max_message_length = 256
 max_envelope_bytes = 8192
+# DEC-47: bytes cifrados; deja espacio para Base64/envelope de 8192 bytes.
+max_ciphertext_bytes = 4096
 max_http_body_bytes = 131072
 max_key_transfer_blob_bytes = 65536
 pagination_default_limit = 50

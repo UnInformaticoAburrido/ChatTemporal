@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 
+from chat.auth_dependency import Authenticated as AuthDependency
 from chat.config import Settings
 from chat.errors import APIError, unavailable
 from chat.identity import Identity, Principal
@@ -28,15 +29,7 @@ def identity_router(identity: Identity, settings: Settings) -> APIRouter:
     router = APIRouter(prefix=settings.api_prefix)
     rates = settings.rate_limits
 
-    async def authenticated(request: Request) -> Principal:
-        authorization = request.headers.get("Authorization", "").split()
-        if len(authorization) != 2 or authorization[0].lower() != "bearer":
-            raise APIError("AUTH_REQUIRED", 401, "Authentication required.")
-        principal = await identity.authenticate(authorization[1])
-        await identity.redis.limit("authenticated", str(principal.user.id), rates.authenticated)
-        return principal
-
-    Authenticated = Annotated[Principal, Depends(authenticated)]
+    Authenticated = Annotated[Principal, Depends(AuthDependency(identity, settings))]
 
     @router.post("/users/register", status_code=201)
     async def register(data: Registration, request: Request) -> Registered:
