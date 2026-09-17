@@ -313,8 +313,10 @@ def test_content_and_event_retention_are_independent(pair: tuple[UUID, UUID, UUI
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("staged", [False, True], ids=["empty_to_head", "0001_to_0002"])
-def test_real_migrations_in_disposable_database(staged: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("staged", [None, "0001_reference", "0002_production"],
+                         ids=["empty_to_head", "0001_to_head", "0002_to_head"])
+def test_real_migrations_in_disposable_database(staged: str | None, tmp_path: Path,
+                                              monkeypatch: pytest.MonkeyPatch) -> None:
     original = read_secret("DATABASE_URL")
     database = "chat_migration_test_" + uuid4().hex
     config = Config()
@@ -330,14 +332,19 @@ def test_real_migrations_in_disposable_database(staged: bool, tmp_path: Path, mo
         secret.chmod(0o600)
         monkeypatch.setenv("DATABASE_URL_FILE", str(secret))
         if staged:
-            command.upgrade(config, "0001_reference")
+            command.upgrade(config, staged)
             with psycopg.connect(dsn) as connection:
                 connection.execute("INSERT INTO conversations(mode) VALUES ('stored')")
+                owner = connection.execute("""INSERT INTO users(nick,email,memory_hash)
+                    VALUES ('migration','migration@example.com','hash') RETURNING id""").fetchone()[0]
+                connection.execute("""INSERT INTO email_verification_tokens(user_id,token_hash,expires_at)
+                    VALUES (%s,%s,now()+interval '30 minutes')""", (owner, "ab" * 32))
         command.upgrade(config, "head")
         with psycopg.connect(dsn) as connection:
-            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0002_production",)
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0003_email_hash",)
             if staged:
                 assert connection.execute("SELECT created_at=updated_at FROM conversations").fetchone() == (True,)
+                assert connection.execute("SELECT token_hash FROM email_verification_tokens").fetchone() == (bytes.fromhex("ab" * 32),)
             # DDL ejecutado realmente; constraints comprobadas en la prueba anterior.
             assert connection.execute("SELECT to_regclass('auth_refresh_tokens')").fetchone() == ("auth_refresh_tokens",)
     finally:

@@ -12,6 +12,30 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class RateRule(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    limit: int = Field(gt=0)
+    seconds: int = Field(gt=0)
+    burst: int = Field(default=0, ge=0)
+
+
+class RateLimits(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    authenticated: RateRule = RateRule(limit=120, seconds=60, burst=30)
+    register_ip: RateRule = RateRule(limit=10, seconds=3600)
+    resend_user: RateRule = RateRule(limit=5, seconds=3600)
+    resend_ip: RateRule = RateRule(limit=20, seconds=3600)
+    recover_account: RateRule = RateRule(limit=5, seconds=900)
+    recover_ip: RateRule = RateRule(limit=20, seconds=900)
+    exchange_ip: RateRule = RateRule(limit=30, seconds=60)
+    refresh_session: RateRule = RateRule(limit=30, seconds=60)
+    redeem_user: RateRule = RateRule(limit=30, seconds=60)
+    redeem_ip: RateRule = RateRule(limit=60, seconds=60)
+    ticket_session: RateRule = RateRule(limit=20, seconds=60)
+    messages_user: RateRule = RateRule(limit=120, seconds=60, burst=20)
+    replay: RateRule = RateRule(limit=100, seconds=1)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -41,6 +65,8 @@ class Settings(BaseModel):
     startup_timeout_seconds: int = Field(default=120, gt=0)
     dependency_timeout_seconds: int = Field(default=2, gt=0, le=5)
     cleanup_interval_seconds: int = Field(default=30, gt=0, le=60)
+    rate_limits: RateLimits = Field(default_factory=RateLimits)
+    trusted_proxy_host: str = "caddy"
 
     @model_validator(mode="after")
     def check_consistency(self) -> "Settings":

@@ -24,6 +24,13 @@ despliegue de la infraestructura, no certifica el chat para usuarios reales.
 
 ## Actualizar código y esquema
 
+La continuación N2 requiere reconstruir Python por las dependencias nuevas y
+aplicar **0003_email_hash** antes de arrancar la API. No basta con `make start`.
+La migración convierte hashes hexadecimales de verificación a BYTEA de 32 bytes;
+si encuentra valores antiguos inválidos se detiene, sin borrar las filas. Revisar
+la procedencia de esos registros antes de corregirlos; no hacer downgrade ni
+vaciar la tabla para forzar el arranque. Los tests prueban upgrade desde 0001 y 0002.
+
 Los fuentes están montados desde el host, por exigencia del proyecto. Un cambio
 en esos archivos puede afectar al contenedor: usar checkout/directorio de release
 controlado, sin editar producción mientras atiende tráfico. No son imágenes
@@ -48,6 +55,30 @@ contra un esquema antiguo.
 Rollback: volver al checkout/imagen anterior compatible. No ejecutar downgrade
 automático: las migraciones lo rechazan. Los cambios destructivos futuros se
 dividen en dos releases (§30.2).
+
+## Configurar identidad y correo (N2)
+
+- `SMTP_URL_FILE` apunta a una URL `smtp://` (STARTTLS obligatorio, puerto 587 por
+  defecto) o `smtps://` (TLS implícito, 465). Validación de certificado activa;
+  no hay opción de producción para SMTP sin TLS. Usuario/password se leen del
+  archivo secreto. Ajustar también `email_from` en la configuración pública.
+- El proveedor local de ejemplo `pendiente.invalid` no envía: registro/reenvío/
+  cambio de email devuelven 503 y revierten la operación. Las pruebas capturan
+  mensajes; no se generan correos externos automáticamente durante el desarrollo.
+- El correo contiene un código para `POST /api/v1/users/verify-email`; no hay aún
+  frontend de confirmación. Caduca en 30 minutos y el reenvío invalida el anterior.
+- Caddy sobrescribe `X-Chat-Client-IP`. `trusted_proxy_host` identifica el servicio
+  Docker autorizado (por defecto `caddy`); no cambiar a un host controlado por
+  clientes. Acceso directo sin proxy: valor vacío. No habilitar indiscriminadamente
+  proxy_headers en Uvicorn ni confiar en X-Forwarded-For de Internet.
+- Las cuotas de `RateLimits` tienen los defaults de §27.3. Se pueden configurar
+  tablas TOML como `[rate_limits.register_ip]` con `limit = 10` y `seconds = 3600`;
+  las cuotas con ráfaga incluyen `burst`. No publicar esta configuración como
+  sustituto de pruebas de carga/capacidad.
+- Logout/recovery/reuse confirman la revocación en PostgreSQL y publican el sid en
+  `auth:session_revoked`. Si Redis falla después, la respuesta es 503 pero la sesión
+  sigue revocada. N5 deberá cerrar sus sockets y revalidar sid ante reconexiones;
+  el Pub/Sub actual no es una cola durable ni acredita ese cierre todavía.
 
 ## Diagnóstico
 

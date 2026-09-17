@@ -26,3 +26,8 @@ log_level = "INFO"
 startup_timeout_seconds = 120
 dependency_timeout_seconds = 2
 cleanup_interval_seconds = 30
+# DEC-37: solo confiar en la IP de cliente aportada por este peer Docker.
+# Usar "" únicamente cuando se accede directamente a la API, sin proxy.
+trusted_proxy_host = "caddy"
+# Cuotas §27.3: defaults en RateLimits. Sobrescribir mediante tablas
+# [rate_limits.register_ip], etc., con limit/seconds/burst.

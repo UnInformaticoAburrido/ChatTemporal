@@ -11,10 +11,14 @@ from redis.asyncio import Redis
 
 from chat.config import Settings, load_settings, read_secret, validate_secrets
 from chat.dependencies import dependencies_ready
+from chat.http_contracts import BodyLimit, install_handlers
+from chat.identity import Identity
+from chat.identity_api import identity_router
 from chat.logging import event
+from chat.mailer import Mailer
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None) -> FastAPI:
     settings = settings or load_settings()
 
     @asynccontextmanager
@@ -24,10 +28,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.draining = True
 
     application = FastAPI(
-        title="Chat · base de infraestructura", version="0.1.0",
+        title="Chat · identidad y persistencia", version="0.2.0",
         docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
     )
     application.state.draining = False
+    application.add_middleware(BodyLimit, limit=settings.max_http_body_bytes)
     application.add_middleware(
         CORSMiddleware, allow_origins=settings.allowed_origins,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -53,6 +58,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "request_id": request_id, "details": {},
             }})
         response.headers["X-Request-ID"] = request_id
+        if request.url.path.startswith(settings.api_prefix + "/"):
+            response.headers["Cache-Control"] = "no-store"
         # DEC-08: nombre de ruta, nunca path arbitrario, query, header ni body.
         route = request.scope.get("route")
         event("http", request_id=request_id, endpoint=getattr(route, "name", "unmatched"),
@@ -80,5 +87,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cleanup_metric.set(1e9)
         return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
-    # No hay endpoints ficticios del MVP. Su implementación y pruebas corresponden a N2–N7.
+    install_handlers(application)
+    application.include_router(identity_router(Identity(settings, mailer=mailer), settings))
     return application

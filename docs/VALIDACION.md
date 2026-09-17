@@ -1,5 +1,47 @@
 # Validación de la entrega
 
+## Continuación N2 · 2026-09-17
+
+Resultado: **50 pruebas unitarias y 24 de integración correctas (74 total)**.
+Ruff sin errores, mypy estricto sin errores en 19 módulos, compilación Python y
+`git diff --check` correctos. `pip check` no detecta dependencias incompatibles y
+`pip-audit -r python/requirements.lock --no-deps --disable-pip` no encuentra
+vulnerabilidades conocidas en esta consulta. Continúan dos avisos de deprecación
+del cliente de pruebas Starlette/httpx/AnyIO, sin fallos.
+
+PostgreSQL 18.6 y Redis 8.0.5 se ejecutaron temporalmente con el runner local,
+sin puertos TCP, como en N1. Se recrearon los binarios/entorno de `/tmp` tras el
+reinicio del equipo. Evidencia final local: `/tmp/chat-persistence-test.ZTvk0j`.
+Los procesos se detienen al terminar. Se probaron:
+
+- BIP-39 inglés de 24 palabras, entropía de 256 bits, NFKD y parámetros exactos
+  Argon2id con salts distintos; hashes excluidos de respuestas y frase solo en registro.
+- JWT EdDSA, claims, tiempos, issuer/audience, sustitución de algoritmo, kid
+  desconocido/ruta inválida y retirada inmediata de una pública.
+- Registro, perfil propio, email de un uso, reenvío, vencimiento, cambio de
+  email y borrado de cuenta; restricciones case-insensitive de nick/email.
+- Refresh concurrente: un ganador, detección de reuse del otro y revocación
+  durable del reemplazo, comprobada también con otra instancia del servicio.
+- Recuperación y bootstrap concurrente de un uso; sustitución de sesión, logout,
+  sesión expirada y publicación real de su revocación por Redis Pub/Sub.
+- Si falla la publicación de la revocación, se conserva el commit PostgreSQL.
+- Emisión de tickets solo con email verificado, hash en Redis y TTL ≤30 s.
+- Privacidad de perfiles en pending y closed sin aceptación previa.
+- Rate limiting concurrente real (sliding window/token bucket), 429 HTTP, 503 al
+  faltar Redis/PostgreSQL, y rollback completo si falla el adaptador de correo.
+- Cuerpo HTTP máximo, extras/JSON inválido, errores correlacionados y no-store;
+  cabeceras de cliente ignoradas si el peer no es el proxy de confianza.
+- Migraciones desde cero, desde 0001 y desde 0002 hasta 0003, conservando hashes
+  email preexistentes al convertirlos de hexadecimal a 32 bytes binarios.
+
+Límites de esta evidencia: ASGITransport prueba los endpoints sin ejecutar su
+lifespan; la validación de secretos/arranque tiene pruebas separadas. El correo
+se captura en un buzón de prueba y SMTP/STARTTLS se verifica con un doble: **no
+hay prueba con un proveedor de correo real**. Tampoco hay todavía servidor WS
+para consumir tickets/cerrar sockets revocados. Quedan pendientes versiones
+exactas de Compose, HTTPS/WSS real, cobertura porcentual/CI y puertas N0/N8/N9.
+La auditoría de dependencias no equivale a una auditoría de imagen o de aplicación.
+
 ## Continuación N1 · 2026-09-16
 
 Se ejecutan **32 pruebas unitarias y 14 de integración**, todas correctas, con

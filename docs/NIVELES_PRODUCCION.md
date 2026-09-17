@@ -15,8 +15,8 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 |---|---|---|---|---|
 | N0 · Infraestructura | — | Compose, redes, secrets, fuentes montados, healthchecks, cadena de arranque | Arranque en limpio, fallo de dependencia, migración fallida y reinicio sin Compose comprobados en contenedores | Implementado; falta validación real de contenedores |
 | N1 · Persistencia | N0 | Alembic, esquema §§17/24.3/28.2, índices, constraints, repositorios y transacciones | BD desde cero y actualización 0001→0002; unicidad y retención | Repositorios base y transacciones implementados; migraciones, concurrencia y retención probadas con servicios locales reales. Pendiente completar repositorios por flujo y validar versiones Compose |
-| N2 · Identidad y seguridad | N1 | Registro/verificación/recuperación, sesiones, bootstrap, JWT, rate limiting | Claims, expiración, reuse, revocación y aislamiento probados | Pendiente |
-| N3 · Claves y contratos | N2 | Pública vigente, DTOs estrictos, errores, cursor, autorización, CORS | Protocolos/bytes correctos; fuzzing y accesos horizontales rechazados | Validación de secrets y CORS base; dominio pendiente |
+| N2 · Identidad y seguridad | N1 | Registro/verificación/recuperación, sesiones, bootstrap, JWT, rate limiting | Claims, expiración, reuse, revocación y aislamiento probados | REST y persistencia implementadas; pruebas de seguridad con BD/Redis reales. Pendientes proveedor SMTP real, cierre de sockets en N5 y versiones Compose |
+| N3 · Claves y contratos | N2 | Pública vigente, DTOs estrictos, errores, cursor, autorización, CORS | Protocolos/bytes correctos; fuzzing y accesos horizontales rechazados | DTOs/errores HTTP de identidad, límite de body y CORS; claves, cursores y contratos restantes pendientes |
 | N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | Pendiente |
 | N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Pendiente |
 | N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Pendiente |
@@ -95,6 +95,27 @@ sigue inaccesible. Decisiones no prescritas: DEC-25–DEC-30.
 - Rate limits completos de §27.3; IP real de Caddy solo mediante proxy de confianza.
 - Pruebas: sustitución de algoritmo, kid desconocido, token futuro/expirado,
   reuse concurrente, revocación WS, normalización y límites sin filtrado de secretos.
+
+### Continuación N2 · 2026-09-17
+
+Implementados todos los endpoints de identidad de §25.2: registro, perfil propio,
+edición/borrado, perfil público autorizado, verificación/reenvío, exchange, recover,
+refresh, logout y emisión de ws-ticket. Se completa su repositorio N1 y se añade
+la migración 0003_email_hash. Las nuevas dependencias requieren reconstruir Python.
+
+Las pruebas verifican JWT/BIP-39/Argon2id, email de un uso, rotación y reuse
+concurrente, revocación durable aun si falla Pub/Sub, aislamiento pending,
+cuotas Redis atómicas y fallo cerrado de dependencias. El correo se captura en
+un buzón de prueba: no se afirma entrega con un proveedor SMTP real. El emisor
+SMTP implementado requiere configurar SMTP_URL; la configuración local de ejemplo
+devuelve 503 y revierte el registro, sin generar cuentas a medias.
+
+Todavía no hay `/ws/v1` funcional: N5 consumirá tickets con GETDEL, escuchará
+revocaciones y cerrará sockets; emitir un ticket no habilita mensajería. Los límites
+de invitaciones/mensajes/replay están configurados para conectarlos a sus futuros
+handlers. N2 no se declara homologado para producción. El siguiente desarrollo
+es **N3: claves públicas, cursores y contratos/autorización restantes**, conservando
+las puertas operativas pendientes. Decisiones: DEC-31–DEC-44; resultados en VALIDACION.md.
 
 ## N3 · Contratos y claves (§§5, 23, 25.1/25.3)
 

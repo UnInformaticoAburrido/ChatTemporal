@@ -15,6 +15,8 @@ respond @wrong_upgrade 404
 @api path /api/v1/* /ws/v1 /health/live
 handle @api {
 	reverse_proxy python:8000 {
+		# DEC-37: se sobrescribe; la API solo confía si el peer TCP es Caddy.
+		header_up X-Chat-Client-IP {remote_host}
 		health_uri /health/ready
 		health_interval 5s
 		health_timeout 2s
