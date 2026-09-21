@@ -3,8 +3,9 @@
 Base creada a partir de la **especificación maestra de producción v1**. Incluye
 infraestructura, migraciones, identidad REST, claves públicas y lecturas paginadas.
 Ya existen registro, verificación, recuperación, sesiones y edición de perfil.
-**El MVP completo del chat sigue pendiente**: aún no hay invitaciones ni envíos
-por WebSocket. El siguiente nivel es N4.
+N4 añade invitaciones y transiciones de conversación. **El MVP completo del chat
+sigue pendiente**: aún no hay envíos por WebSocket ni interfaz cliente. El siguiente
+nivel es N5; la emisión y resolución de votos corresponde a N6.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -203,7 +204,40 @@ Este módulo no guarda privadas ni llama a la red. El cliente final deberá prot
 su almacenamiento local e integrar la UI. `max_characters` permite cambiar el
 límite local de 256; el servidor solo valida estructura y bytes cifrados.
 `parse_message_send` prepara el contrato futuro, sin habilitar envío WS todavía.
-Las pruebas de lectura crean conversaciones mediante fixtures hasta implementar N4.
+Las pruebas N3 conservan fixtures de lectura; las de N4 crean conversaciones por REST.
+
+## Invitaciones y conversaciones (N4)
+
+Rutas autenticadas bajo `/api/v1`:
+
+| Rutas | Comportamiento |
+|---|---|
+| GET `/invitations/me` | Crea bajo demanda y devuelve dos códigos estables de 83 caracteres; exige email verificado |
+| POST `/invitations/regenerate` | Revoca ambos códigos y crea una nueva identidad/generación en una transacción |
+| POST `/invitations/redeem` | Recibe `{code}`; exige email verificado y devuelve conversación pending con `host_public_key` |
+| POST `/conversations/{id}/accept` | Solo host; activa la conversación y abre un voto de 30 s con censo congelado |
+| POST `/conversations/{id}/upgrade` | Solo host en active; cambia ephemeral→stored para mensajes posteriores |
+| DELETE `/conversations/{id}` | Cierre unilateral permanente |
+| POST `/conversations/{id}/leave` | Marca al usuario como left y cierra el intercambio 1:1 |
+
+Antes de aceptar, `peer=null` para ambos participantes; canjear no revela nick ni
+user_id del host. `host_public_key` es la pública Base64URL de 32 bytes (protocolo v1).
+El host debe haber publicado una clave: sin ella, redeem devuelve 409
+`HOST_KEY_UNAVAILABLE` y no crea conversación. No se permite canjear el código propio.
+Cada canje correcto crea una conversación nueva; no es una operación idempotente.
+Regenerar invalida los códigos, pero conserva las conversaciones ya creadas.
+
+Los reintentos de accept recuperan el mismo voto; upgrade ya aplicado y close
+ya realizado no alteran sus fechas. Leave se puede repetir, pero después de salir
+el usuario pierde acceso al detalle, historial y claves de esa relación.
+El censo y plazo de aceptación quedan persistidos con la migración
+**0004_vote_electorate**, que debe aplicarse antes de arrancar esta versión
+(ver [operación](docs/OPERACION.md)). No se reconstruyen censos de votos históricos.
+
+N4 abre el voto y bloquea las escrituras internas durante sus 30 s, pero **todavía
+no permite votar ni resuelve el resultado**: eso se implementará en N6. Hasta
+entonces, su fila puede conservar status=open después del plazo. La publicación
+de eventos y cancelación de offers requieren N5, pues aún no existe el servidor WS.
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con
