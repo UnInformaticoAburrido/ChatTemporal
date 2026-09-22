@@ -1,4 +1,4 @@
-"""Endpoints N4. Publicación de eventos WS y cancelación de offers corresponden a N5."""
+"""Endpoints N4 con publicación de eventos y cancelación de ofertas N5."""
 
 from typing import Annotated
 
@@ -16,7 +16,7 @@ from chat.resource_dto import ConversationSummary
 
 def conversation_router(identity: Identity, settings: Settings) -> APIRouter:
     router = APIRouter(prefix=settings.api_prefix)
-    service = ConversationService()
+    service = ConversationService(settings)
     Member = Annotated[Principal, Depends(Authenticated(identity, settings))]
 
     @router.get("/invitations/me")

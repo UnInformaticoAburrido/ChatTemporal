@@ -1,5 +1,57 @@
 # Validación de la entrega
 
+## Continuación N5 · 2026-09-22
+
+Resultado final: **89 pruebas unitarias y 50 de integración correctas (139 total)**.
+Ruff y `git diff --check` correctos; mypy estricto sin errores en 39 módulos.
+No hay nuevas dependencias. Persisten avisos de deprecación de Starlette/httpx/AnyIO
+y del backend Uvicorn/websockets; no se presentan como fallos ni se ocultan.
+
+El entorno temporal anterior desapareció tras reiniciar. Se reconstruyó con los
+locks existentes y binarios oficiales extraídos en `/tmp`, sin instalar servicios
+del sistema. Python 3.14.4, PostgreSQL 18.6 y Redis 8.0.5. PostgreSQL/Redis usan
+sockets Unix privados; las pruebas WebSocket levantan Uvicorn en puertos loopback
+asignados por el sistema. Evidencia final: `/tmp/chat-persistence-test.2WyFw7`.
+Todos los servicios temporales se detienen al terminar.
+
+Comprobaciones nuevas:
+
+- Tickets concurrentes de un solo uso, expiración, Origin, sesión y hash compatible
+  con la emisión N2. Se corrigió el hash del handshake inicial: debe usar bytes
+  del token, no su representación Base64.
+- Sockets reales en dos instancias ASGI, envío stored, cifrado/descifrado del cliente
+  de referencia, estado REST, historial, ACK repetido y fingerprint incompatible.
+  Las fechas de envío, ACK, cierre y upgrade se verifican en UTC incluso cuando
+  PostgreSQL devuelve su zona local.
+- Offer no crea evento ni contiene ciphertext; ready vinculado a conexión;
+  entrega ephemeral, ACK desde conexión ajena rechazado, ACK tardío, desconexión
+  y borrado del payload. PostgreSQL no recibe el contenido efímero.
+- ACK de una entrega previa sigue funcionando tras accept/upgrade/close; una
+  oferta pendiente cancelada no se convierte en stored por un send tardío.
+- Stored offline y reintento tras reconexión; receptor que conecta recupera offers
+  vigentes. No se atribuye esta prueba a un proveedor Push.
+- Pérdida total de Redis mediante FLUSHDB exclusivamente en la instancia sintética,
+  cierre de sockets, nueva autenticación y reconciliación de entregas huérfanas.
+- Revocación publicada y revocación sin aviso Pub/Sub; draining cierra 1001 y
+  rechaza tickets nuevos en la misma instancia.
+- Frames binarios 1003, máximo 1009, cuota persistente 4429, rechazo de accesos
+  horizontales y bloqueo por voto/cierre. Offer+send consume una sola cuota lógica.
+- Heartbeat nativo con cliente que recibe ping y deliberadamente no responde:
+  el servidor cierra al vencer el timeout, sin mensajes JSON de heartbeat.
+- Migraciones desde cero y desde 0001/0002/0003/**0004** hasta 0005_delivery_mode.
+
+La repetición final detectó una prueba N2 dependiente del cambio de segundo:
+calculaba exp y el helper calculaba iat en instantes distintos, convirtiendo a
+veces el TTL inválido de 301 s en uno válido de 300 s. Se fijan ambos extremos
+en la prueba; la validación de producción no cambia. La suite unitaria posterior pasa.
+
+Límites: no hay prueba de Docker/HTTPS/WSS/staging ni carga o caída forzada de un
+proceso de producción. El estado huérfano se reproduce de forma controlada y
+Redis perdido se prueba con datos temporales. Pub/Sub no es una cola durable;
+el cliente debe consultar estado/historial tras cortes. Ballots/resolución N6,
+transferencia/Push N7, interfaz cliente y operación/homologación N8–N9 pendientes.
+No se ha repetido una auditoría de dependencias ni se certifica producción.
+
 ## Continuación N4 · 2026-09-21
 
 Resultado: **79 pruebas unitarias y 37 de integración correctas (116 total)**.
