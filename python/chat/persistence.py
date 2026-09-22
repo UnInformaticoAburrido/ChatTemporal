@@ -89,6 +89,7 @@ class MessageEvent:
     sent_at: datetime
     expires_at: datetime
     payload_fingerprint: bytes | None = field(repr=False)
+    mode_at_send: Mode | None
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,8 @@ class Delivery:
     status: DeliveryState
     received_at: datetime | None
     updated_at: datetime
+    deadline_at: datetime | None
+    connection_id: UUID | None
 
 
 @dataclass(frozen=True)
@@ -252,10 +255,10 @@ class Messages:
                 await cursor.execute(
                     """WITH moment AS (SELECT clock_timestamp() AS ts)
                     INSERT INTO message_events
-                      (id,conversation_id,sender_id,sent_at,expires_at,payload_fingerprint)
-                    SELECT %s,%s,%s,ts,ts + interval '30 days',%s FROM moment
+                      (id,conversation_id,sender_id,sent_at,expires_at,payload_fingerprint,mode_at_send)
+                    SELECT %s,%s,%s,ts,ts + interval '30 days',%s,%s FROM moment
                     ON CONFLICT (id) DO NOTHING RETURNING *""",
-                    (message.id, message.conversation_id, message.sender_id, message.fingerprint),
+                    (message.id, message.conversation_id, message.sender_id, message.fingerprint, conversation.mode),
                 )
                 event = await cursor.fetchone()
             if event is None:

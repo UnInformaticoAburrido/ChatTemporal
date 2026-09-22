@@ -33,6 +33,7 @@ class RateLimits(BaseModel):
     redeem_ip: RateRule = RateRule(limit=60, seconds=60)
     ticket_session: RateRule = RateRule(limit=20, seconds=60)
     messages_user: RateRule = RateRule(limit=120, seconds=60, burst=20)
+    ws_frames: RateRule = RateRule(limit=600, seconds=60, burst=100)
     replay: RateRule = RateRule(limit=100, seconds=1)
 
 

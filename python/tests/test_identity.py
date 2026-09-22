@@ -93,7 +93,9 @@ def test_time_algorithm_substitution_and_bootstrap_isolation(local_settings: Set
         with pytest.raises(APIError):
             tokens.verify(forged)
     assert tokens.verify(signed(bootstrap=True), bootstrap=True).session_id is None
-    for bootstrap in (signed(), signed(bootstrap=True, changes={"exp": now + 301})):
+    # Fijar ambos extremos: si signed() cruza un segundo, un TTL de 301 s
+    # calculado con dos relojes distintos podía convertirse accidentalmente en 300.
+    for bootstrap in (signed(), signed(bootstrap=True, changes={"iat": now, "nbf": now, "exp": now + 301})):
         with pytest.raises(APIError):
             tokens.verify(bootstrap, bootstrap=True)
 
