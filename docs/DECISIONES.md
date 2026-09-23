@@ -114,6 +114,17 @@ compatibilidad de esquema; todo mensaje nuevo debe incluirlo.
 | DEC-68 | Revocación por Pub/Sub y comprobación de sesión/presencia cada segundo para sockets ociosos. Redis perdido cierra 1011, sid revocado 4401, draining 1001. Ping/pong nativo de Uvicorn, sin JSON inventado. Mantener el backend fijado y sus avisos de deprecación hasta probar una migración separada. El cliente final implementará backoff/jitter de §26.2. |
 | DEC-69 | No hay transacción distribuida DB/Redis. Commit de evento antes de payload/publicación; un crash intermedio queda pending hasta reconciliar contra conexión/deadline. ACK serializa actualización y borrado de payload, y publica delivered solo después del commit. Un fallo entre sistemas puede terminar conservadoramente en failed/expired; nunca se confirma entrega sin commit. Stored permanece consultable aunque falle su publicación. |
 
+## Continuación N6 · 2026-09-23
+
+| ID | Decisión y motivo |
+|---|---|
+| DEC-70 | GET/POST de voto revalidan sesión, pertenencia actual y censo congelado. Un voto ajeno, inexistente o de quien abandonó devuelve 404 VOTE_NOT_FOUND. Close no revoca acceso de quien permanece ni cancela el voto; leave sí revoca acceso, conservando el ballot previo. Se aplica la cuota REST existente, sin inventar una cuota específica. |
+| DEC-71 | Orden de locks: users NO KEY UPDATE → conversations FOR UPDATE → votes FOR UPDATE. INSERT comprueba expires_at con clock_timestamp en la misma sentencia. Un mismo ballot puede reintentarse después del deadline y devuelve el estado actual; cambiarlo devuelve VOTE_CONFLICT, primer voto tardío VOTE_EXPIRED. No hay cierre anticipado. |
+| DEC-72 | 0006 sustituye la FK a users por una FK al censo para que borrar una cuenta no destruya su ballot ni altere el resultado. FK NOT VALID conserva filas externas históricas sin inventar censos, y exige pertenencia en nuevas escrituras. Las votaciones sin censo completo o con ballots externos incompatibles se rechazan con VOTE_UNSUPPORTED y se registran para revisión operativa. |
+| DEC-73 | majority_absolute usa enteros (2 × sí > N). Al cerrar, no_votes incluye abstenciones (N − sí), sin crear ballots falsos ni sustituir my_vote=null. closed_at=expires_at representa cierre lógico. El worker, GET/POST y accept reintentado pueden materializar el mismo cierre, siempre bajo lock. |
+| DEC-74 | Cierre y eliminación de messages.is_grace_message rechazados son atómicos. Se mantienen message_events/deliveries/fingerprints y contador de gracia para conservar estado e idempotencia. Un predicado de historial oculta gracia sin mayoría desde el deadline si el worker se retrasa; no se elimina contenido posterior ni se amplía retención del aprobado. Upgrade no copia payload efímero. |
+| DEC-75 | vote.opened/updated se preparan por destinatario con su propio my_vote y se publican tras commit. El worker procesa lotes de 1000 con transacciones independientes; fallo Pub/Sub no revierte resultados ni impide cerrar otros votos. REST puede devolver 503 después de commit; repetir elección o GET recupera el resultado. Sin outbox no se garantiza entrega/orden global: el cliente consulta GET tras cortes/deadline y no debe regresar de terminal a open por un aviso atrasado. |
+
 Fuentes técnicas de DEC-47/50: [PyNaCl, cifrado de clave pública](https://pynacl.readthedocs.io/en/latest/public/)
 y [bindings crypto_box de PyNaCl](https://github.com/pyca/pynacl/blob/main/src/nacl/bindings/crypto_box.py).
 El algoritmo y los formatos proceden de §5; la biblioteca solo los implementa.

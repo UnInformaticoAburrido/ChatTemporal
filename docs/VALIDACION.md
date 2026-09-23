@@ -1,5 +1,71 @@
 # Validación de la entrega
 
+## Continuación N6 · 2026-09-23
+
+Resultado: **93 pruebas unitarias y 71 de integración correctas (164 total)**.
+Ruff de Python y de la migración nueva, `git diff --check` y mypy estricto de
+42 módulos correctos. No hay nuevas dependencias. Se mantienen los avisos de
+deprecación ya existentes de Starlette/httpx/AnyIO y Uvicorn/websockets.
+
+El entorno temporal de N5 desapareció al reiniciar; se reconstruyó con los locks
+del repositorio y paquetes Ubuntu extraídos en `/tmp`, sin instalar servicios en
+el sistema. Python 3.14.4, PostgreSQL 18.6 y Redis 8.0.5. PostgreSQL/Redis usan
+sockets Unix privados; las pruebas WebSocket usan puertos loopback temporales.
+La suite arranca también el worker real como subproceso y lo detiene al finalizar.
+Evidencia final: `/tmp/chat-persistence-test.g1gFTp` (temporal, no se versiona).
+
+Comprobaciones N6, documentadas por apartado en [N6_VOTACIONES.md](N6_VOTACIONES.md):
+
+- REST de votos, DTO estricto, sesión revocada, ocultación de votos ajenos y
+  pérdida de acceso tras leave/borrado. Un primer ballot tardío devuelve el
+  **410 VOTE_EXPIRED** normativo; cambiar uno existente devuelve 409.
+- Ocho ballots simultáneos con elecciones opuestas producen una sola elección.
+  Una petición que espera un lock comprueba el plazo al adquirirlo; no se usa
+  el inicio de transacción como reloj. Reintentos compatibles funcionan tras cierre.
+- Mayoría absoluta y abstención=NO con censos sintéticos 2/3/5/10; no se habilitan
+  grupos en la API. No se cierra antes del plazo aunque todos voten a favor.
+- Tres resolutores concurrentes cierran una sola vez. Rollback revierte juntos
+  el resultado y la eliminación de gracia. Un proceso worker cierra sin lecturas REST.
+- Gracia stored aprobada conservada; rechazada oculta desde deadline y eliminada
+  físicamente al resolver. Permanecen mensajes posteriores, eventos, entregas,
+  fingerprints y contador; reintentar no resucita contenido eliminado.
+- Ballots conservados al abandonar/eliminar el elector; censo y resultado no
+  cambian. La nueva FK rechaza un ballot de alguien ajeno al censo.
+- WS entre dos instancias: gracia real stored/ephemeral, accept, ballots,
+  `vote.opened/updated` con `my_vote` propio, bloqueo send/offer y envío tras cierre.
+  Upgrade no convierte el contenido efímero previo en stored.
+- Fallo Pub/Sub inyectado: el ballot mantiene commit aunque REST devuelve 503;
+  la resolución de otros votos continúa y GET permite recuperar el resultado.
+- Migraciones desde cero y desde 0001/0002/0003/0004/**0005** hasta 0006.
+
+Comandos usados (rutas temporales sustituibles por binarios equivalentes):
+
+```bash
+cd python
+/tmp/chat-n6-venv/bin/python -m pytest -q -m 'not integration' -p no:cacheprovider
+/tmp/chat-n6-venv/bin/ruff check . ../BD/postgresql/migrations/versions/0006_ballot_electorate.py
+/tmp/chat-n6-venv/bin/mypy --cache-dir /tmp/chat-n6-mypy chat chat_client
+cd ..
+LD_LIBRARY_PATH=/tmp/chat-n6-runtime/usr/lib/x86_64-linux-gnu \
+CHAT_TEST_PG_BIN=/tmp/chat-n6-runtime/usr/lib/postgresql/18/bin \
+CHAT_TEST_REDIS_SERVER=/tmp/chat-n6-runtime/usr/bin/redis-server \
+CHAT_TEST_PYTHON=/tmp/chat-n6-venv/bin/python sh scripts/test_local_services.sh
+git diff --check
+```
+
+Las pruebas temporales requieren permiso para sockets locales. La primera pasada
+detectó expectativas de migración antiguas y dos fixtures de prueba incorrectos;
+se corrigieron antes de la ejecución final. El caso de locks limpia el snapshot
+de estadísticas de PostgreSQL al observar la espera para no consultar una vista
+congelada dentro de la transacción. La comparación con §23 corrigió el HTTP de
+voto vencido a 410. No se alteraron los requisitos para hacer pasar pruebas.
+
+Límites: Docker sigue inaccesible, sin homologación de versiones Compose/HTTPS/WSS,
+staging, carga ni proveedores SMTP/Push. Pub/Sub no es durable ni ordena commits
+concurrentes; los clientes recuperan estado por GET. La aplicación local del
+resultado ephemeral corresponde a la interfaz cliente pendiente. N7–N9 continúan
+pendientes; no se repite auditoría de dependencias ni se certifica producción.
+
 ## Continuación N5 · 2026-09-22
 
 Resultado final: **89 pruebas unitarias y 50 de integración correctas (139 total)**.
