@@ -1,4 +1,4 @@
-"""Purga y reconciliación N5. El cierre de votos corresponde a N6."""
+"""Purga, reconciliación N5 y resolución automática de votaciones N6."""
 
 import asyncio
 import signal
@@ -10,6 +10,7 @@ from redis.asyncio import Redis
 from chat.config import load_settings, read_secret
 from chat.logging import event
 from chat.reconciliation import reconcile_once
+from chat.voting import resolve_votes_once
 
 # DUD-02: §18 borra sesiones al expirar; contradice la auditoría de §28.3.
 # Respuesta del usuario: no solicitada; §23 establece prioridad de regla específica.
@@ -65,6 +66,11 @@ async def run() -> None:
         try:
             async with asyncio.timeout(settings.cleanup_interval_seconds):
                 while not stopping.is_set():
+                    try:
+                        await resolve_votes_once()
+                    except Exception:
+                        event("vote_resolution_failed", service="worker", level="ERROR",
+                              error_code="TEMPORARY_UNAVAILABLE")
                     try:
                         await reconcile_once(settings)
                     except Exception:

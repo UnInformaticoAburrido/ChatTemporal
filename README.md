@@ -4,8 +4,9 @@ Base creada a partir de la **especificación maestra de producción v1**. Incluy
 infraestructura, migraciones, identidad REST, claves públicas y lecturas paginadas.
 Ya existen registro, verificación, recuperación, sesiones y edición de perfil.
 N5 añade mensajería WebSocket stored/ephemeral sobre las invitaciones de N4.
+N6 completa las votaciones y la conservación/eliminación automática de la gracia.
 **El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
-N6–N9. El siguiente paso es N6: emisión y resolución de votos.
+N7–N9. El siguiente paso es N7: recuperación y Web Push.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -13,6 +14,7 @@ N6–N9. El siguiente paso es N6: emisión y resolución de votos.
 - [Operación y despliegue](docs/OPERACION.md)
 - [Especificación original](docs/especificacion_maestra_chat_produccion.docx)
 - [Validación realizada](docs/VALIDACION.md)
+- [N6 documentado por subapartados](docs/N6_VOTACIONES.md)
 
 ## Estructura
 
@@ -234,9 +236,9 @@ El censo y plazo de aceptación quedan persistidos con la migración
 **0004_vote_electorate**, que debe aplicarse antes de arrancar esta versión
 (ver [operación](docs/OPERACION.md)). No se reconstruyen censos de votos históricos.
 
-N4 abre el voto y bloquea las escrituras internas durante sus 30 s, pero **todavía
-no permite votar ni resuelve el resultado**: eso se implementará en N6. Hasta
-entonces, su fila puede conservar status=open después del plazo. N5 publica los eventos de conversación y cancela offers pendientes; los mensajes
+N4 abre el voto y bloquea las escrituras internas durante sus 30 s. N6 permite
+votar, consultar y resolver el resultado automáticamente. N5 publica los eventos
+de conversación y cancela offers pendientes; los mensajes
 ya confirmados antes de un cierre o upgrade conservan su semántica original.
 
 ## Mensajería WebSocket (N5)
@@ -272,9 +274,34 @@ corresponde al cliente final, todavía pendiente.
 
 Aplicar **0005_delivery_mode** antes de arrancar API/worker. Guarda el modo histórico,
 plazo y conexión de cada entrega, para que upgrade o pérdida de Redis no conviertan
-un mensaje efímero en persistente. El worker reconcilia entregas huérfanas y plazos;
-los votos continúan pendientes de resolución en N6. Ver [operación](docs/OPERACION.md)
+un mensaje efímero en persistente. El worker reconcilia entregas huérfanas y plazos.
+Ver [operación](docs/OPERACION.md)
 y [evidencia de pruebas](docs/VALIDACION.md).
+
+## Votaciones y gracia (N6)
+
+1. Accept devuelve el identificador del voto `retain_grace_messages` y emite
+   `vote.opened`. Durante sus 30 s se rechazan nuevos offer/send con `VOTE_OPEN`.
+2. `POST /api/v1/votes/{id}/ballots`, con Bearer y `{"choice":true}` o
+   `{"choice":false}`, devuelve `VoteSnapshot`. Repetir la elección es
+   idempotente; cambiarla devuelve 409 `VOTE_CONFLICT`.
+3. `GET /api/v1/votes/{id}` devuelve el estado y el `my_vote` del usuario actual.
+   Solo acceden electores que siguen perteneciendo a la conversación. Un primer
+   voto fuera de plazo devuelve 410 `VOTE_EXPIRED`.
+4. El worker cierra automáticamente al vencer el plazo. Se aprueba únicamente
+   con más de la mitad del censo a favor; toda abstención cuenta como NO.
+   Haber alcanzado mayoría antes no acorta los 30 s.
+5. En stored, aprobar conserva la gracia hasta su caducidad normal; rechazar
+   elimina su ciphertext sin borrar estado de entrega ni deduplicación. Los
+   mensajes posteriores permanecen. En ephemeral, el cliente aplica el resultado
+   localmente al recibir `vote.updated` o consultar GET después de reconectar.
+
+Aplicar **0006_ballot_electorate** antes de reiniciar API y worker. El censo y los
+votos ya emitidos se mantienen si un elector abandona o elimina su cuenta.
+Pub/Sub no garantiza recuperación ni orden entre operaciones concurrentes:
+consultar GET al vencer el plazo y tras cortes; un resultado terminal no debe
+volver a open por un aviso atrasado. La interfaz cliente final sigue pendiente.
+Detalles, decisiones y pruebas en [N6 por subapartados](docs/N6_VOTACIONES.md).
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con

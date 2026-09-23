@@ -20,6 +20,7 @@ from chat.realtime_redis import publish
 from chat.resource_dto import ConversationSummary
 from chat.resource_store import ResourceStore
 from chat.resources import summary
+from chat.vote_store import VoteStore
 from chat.ws_protocol import frame, utc_text
 
 
@@ -145,7 +146,13 @@ class ConversationService:
                 if row.status == "pending":
                     await store.accept(identifier)
                     vote = await store.vote(principal.user.id, identifier)
-                    await self._queue(unit, identifier, "vote.opened", vote.model_dump(mode="json"), events)
+                    events.extend(await VoteStore(unit.connection).events(vote.id, "vote.opened"))
+                else:
+                    vote = await store.vote(principal.user.id, identifier)
+                    votes = VoteStore(unit.connection)
+                    await votes.lock(vote.id, principal.user.id)
+                    if await votes.resolve(vote.id):
+                        events.extend(await votes.events(vote.id))
                 return AcceptedConversation(conversation=summary(await store.visible(principal.user.id, identifier)),
                                             vote=await store.vote(principal.user.id, identifier))
             if row.status != "active":

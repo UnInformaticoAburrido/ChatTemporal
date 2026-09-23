@@ -19,7 +19,7 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 | N3 · Claves y contratos | N2 | Pública vigente, DTOs estrictos, errores, cursor, autorización, CORS | Protocolos/bytes correctos; fuzzing y accesos horizontales rechazados | Implementado y probado con servicios reales locales; cliente criptográfico de referencia y lecturas paginadas. Pendientes plataforma cliente final y homologación Compose/staging |
 | N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | REST implementado; apertura de voto adelantada de N6. Eventos WS integrados en N5; homologación Compose/staging pendiente |
 | N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Implementado y probado con sockets y servicios locales reales; pendiente homologación Compose/staging y carga |
-| N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Pendiente |
+| N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Implementado y probado con REST/WS/worker y servicios reales locales; homologación Compose/staging pendiente |
 | N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Pendiente |
 | N8 · Operación y seguridad | N0–N7 | Backups/restauración, métricas/alertas completas, logs 14 días, despliegue y rotación | Restauración, fallos, secretos/logs e imagen auditados | Métricas y alertas base; operación completa pendiente |
 | N9 · Homologación y release | N0–N8 | CI, integración/E2E, staging equivalente, carga y runbooks | Todos los criterios §22 y checklist §31 cumplidos | Pendiente |
@@ -251,6 +251,23 @@ N5 respeta el bloqueo de 30 s, pero no resuelve ni elimina gracia rechazada.
   aplicación local. Emitir vote.opened/updated con estado autorizado por usuario.
 - Worker cierra votos y publica resultado; separar reloj lógico exacto de demora
   del scheduler. Tests con N=2/3/5/10, voto tardío y envíos simultáneos.
+
+### Continuación N6 · 2026-09-23
+
+API 0.6.0 añade GET de voto y POST de ballot, resolución automática al vencer
+30 s y snapshots por destinatario. Concurrencia serializada con send/accept/leave;
+la abstención cuenta como NO sin crear ballots ficticios. Reintentos compatibles
+siguen siendo idempotentes tras el cierre. Un primer voto tardío devuelve 410.
+
+La migración 0006 conserva ballots al borrar un elector, vinculándolos al censo.
+El resultado y la eliminación de gracia stored rechazada hacen commit juntos;
+se mantienen eventos, entregas y fingerprints. El historial deja de mostrar gracia
+rechazada desde el deadline, aunque el worker llegue después. En ephemeral se
+notifica el resultado para su aplicación local; no se añade persistencia de payload.
+
+Cada subapartado y su evidencia se documenta en [N6_VOTACIONES.md](N6_VOTACIONES.md).
+Decisiones DEC-70–DEC-75; operación y validación se registran en sus documentos.
+El siguiente nivel funcional es N7; la interfaz final y homologación siguen pendientes.
 
 ## N7 · Recuperación y Web Push (§§5.2/5.3, 12, 25.3/25.5)
 
