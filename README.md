@@ -5,8 +5,9 @@ infraestructura, migraciones, identidad REST, claves públicas y lecturas pagina
 Ya existen registro, verificación, recuperación, sesiones y edición de perfil.
 N5 añade mensajería WebSocket stored/ephemeral sobre las invitaciones de N4.
 N6 completa las votaciones y la conservación/eliminación automática de la gracia.
+N7 añade transferencia de claves, replay de historial y Web Push genérico.
 **El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
-N7–N9. El siguiente paso es N7: recuperación y Web Push.
+N8–N9. El siguiente paso es N8: operación y seguridad.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -15,6 +16,7 @@ N7–N9. El siguiente paso es N7: recuperación y Web Push.
 - [Especificación original](docs/especificacion_maestra_chat_produccion.docx)
 - [Validación realizada](docs/VALIDACION.md)
 - [N6 documentado por subapartados](docs/N6_VOTACIONES.md)
+- [N7 documentado por subapartados](docs/N7_RECUPERACION_PUSH.md)
 
 ## Estructura
 
@@ -302,6 +304,40 @@ Pub/Sub no garantiza recuperación ni orden entre operaciones concurrentes:
 consultar GET al vencer el plazo y tras cortes; un resultado terminal no debe
 volver a open por un aviso atrasado. La interfaz cliente final sigue pendiente.
 Detalles, decisiones y pruebas en [N6 por subapartados](docs/N6_VOTACIONES.md).
+
+## Recuperación y Web Push (N7)
+
+- El dispositivo nuevo obtiene una sesión por `/auth/exchange` y crea una
+  transferencia con `POST /api/v1/key-transfers`. La sesión anterior queda
+  revocada para chat; conserva únicamente permiso para subir el blob cifrado
+  a su sucesor, hasta 24 h y sin renovar su access token.
+- El dispositivo anterior cifra el bundle localmente y ejecuta
+  `PUT /api/v1/key-transfers/{id}` con `{"encrypted_blob":"Base64URL"}`.
+  Solo admite una carga, máximo 65536 bytes. El secreto se comparte directamente
+  mediante QR; nunca se incluye en las peticiones al servidor.
+- El nuevo descarga mediante GET, descifra localmente y confirma con DELETE.
+  GET permite reintentos. DELETE elimina blob/metadatos y el permiso del anterior.
+  El TTL total comienza en POST y no se renueva al subir o descargar.
+- `chat_client.recovery` incluye cifrado/descifrado del bundle, contenido QR y
+  `replay_history` para volver a cifrar una copia local en orden. Renderizar/escanear
+  el QR y aplicar los mensajes recibidos corresponde a la interfaz cliente final.
+- `recovery.replay.begin/item/end` transportan el historial por WebSocket entre
+  participantes conectados en una conversación active. Se empieza en sequence=0,
+  se termina con item_count exacto y se limita a 100 items/s por replay. No se
+  insertan mensajes, eventos ni entregas normales. Tras un corte se reinicia con
+  otro replay_id; si nadie conserva una copia local, el historial es irrecuperable.
+- `POST /api/v1/push/subscriptions` recibe `{endpoint,p256dh,auth_secret}` y hace
+  upsert propio; DELETE `/api/v1/push/subscriptions/{id}` revoca. Se aceptan
+  endpoints HTTPS de puerto 443 y claves Web Push válidas. El worker envía
+  notificaciones genéricas de stored y offers ephemeral offline desde una cola
+  que contiene solo event_type/conversation_id/message_id y metadatos de reintento.
+
+Aplicar **0007_recovery_push** antes de reiniciar API y worker. Se utilizan las
+claves VAPID existentes. Las suscripciones se vinculan a la sesión vigente para
+no seguir notificando un dispositivo sustituido. La cola y sus reintentos no
+garantizan exactamente una notificación si un proceso cae después del envío.
+La validación local no sustituye las pruebas con navegador/proveedor Push real.
+Ver [N7 por subapartados](docs/N7_RECUPERACION_PUSH.md) y [operación](docs/OPERACION.md).
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con

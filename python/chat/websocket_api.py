@@ -23,6 +23,8 @@ from chat.persistence import transaction
 from chat.protocol import decode_binary
 from chat.realtime_redis import RealtimeRedis
 from chat.reconciliation import reconcile_once
+from chat.replay import Replay
+from chat.replay_dto import ReplayBegin, ReplayEnd, ReplayItem
 from chat.resource_dto import MessageSend
 from chat.ws_protocol import error_frame, frame, parse_frame
 
@@ -30,6 +32,7 @@ from chat.ws_protocol import error_frame, frame, parse_frame
 def install_websocket(app: FastAPI, settings: Settings) -> None:
     service = Messaging(settings)
     presence = RealtimeRedis(settings)
+    replay = Replay(settings)
 
     @app.websocket(settings.ws_path)
     async def websocket(socket: WebSocket) -> None:
@@ -112,8 +115,13 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
                                 message = parse_frame(raw_frame.get("text", ""), settings)
                                 if not await presence.connected(str(connection), str(user_id)):
                                     raise unavailable()
-                                await IdentityRedis().limit("ws_frames", str(sid), settings.rate_limits.ws_frames)
-                                if isinstance(message, MessageSend):
+                                if isinstance(message, ReplayItem):
+                                    await IdentityRedis().limit("replay_session", str(sid), settings.rate_limits.replay_session)
+                                else:
+                                    await IdentityRedis().limit("ws_frames", str(sid), settings.rate_limits.ws_frames)
+                                if isinstance(message, (ReplayBegin, ReplayItem, ReplayEnd)):
+                                    await replay.relay(principal, connection, message)
+                                elif isinstance(message, MessageSend):
                                     result = await service.send(principal, connection, message)
                                     if result:
                                         await send(result)
@@ -140,6 +148,8 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
                                 if error.status == 503:
                                     raise
                                 if error.status == 429:
+                                    if isinstance(message, ReplayItem):
+                                        continue  # §27.3: exceso temporal del replay, reintentar el mismo sequence.
                                     rate_strikes += 1
                                     if rate_strikes >= 3:
                                         await socket.close(code=4429)

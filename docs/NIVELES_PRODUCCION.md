@@ -20,7 +20,7 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 | N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | REST implementado; apertura de voto adelantada de N6. Eventos WS integrados en N5; homologación Compose/staging pendiente |
 | N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Implementado y probado con sockets y servicios locales reales; pendiente homologación Compose/staging y carga |
 | N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Implementado y probado con REST/WS/worker y servicios reales locales; homologación Compose/staging pendiente |
-| N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Pendiente |
+| N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Implementado y probado localmente con BD/Redis, WS y receptor HTTPS; proveedor/navegador real y homologación pendientes |
 | N8 · Operación y seguridad | N0–N7 | Backups/restauración, métricas/alertas completas, logs 14 días, despliegue y rotación | Restauración, fallos, secretos/logs e imagen auditados | Métricas y alertas base; operación completa pendiente |
 | N9 · Homologación y release | N0–N8 | CI, integración/E2E, staging equivalente, carga y runbooks | Todos los criterios §22 y checklist §31 cumplidos | Pendiente |
 
@@ -278,8 +278,25 @@ El siguiente nivel funcional es N7; la interfaz final y homologación siguen pen
   Rate limit 100 frames/s por replay. Historial perdido sin copia se considera irrecuperable.
 - Push genérico: stored al aceptar send, ephemeral offer si offline. Solo metadatos
   permitidos, sin texto/ciphertext. SMTP y Web Push se prueban con proveedores reales.
-- Coexistencia de dos dispositivos solo para transferencia; autenticación de ambos
-  y límites de convivencia requieren concretar DUD-08 antes de implementar.
+- Coexistencia solo para transferencia: DUD-08 resuelta mediante permiso residual
+  de carga al sucesor, conservando una sola sesión normal (DEC-76).
+
+### Continuación N7 · 2026-09-23
+
+API 0.7.0 y migración 0007_recovery_push. Implementadas transferencias con carga
+única, TTL absoluto y autorización entre dispositivos limitada a PUT. El cliente
+de referencia cifra el bundle, prepara/valida contenido QR y recifra historial
+local en frames replay ordenados; no incluye interfaz para renderizar/escanear QR.
+
+Replay autoriza cada frame, vincula conexiones, verifica sequence/item_count y
+transporta ciphertext solo por Pub/Sub, sin escribir historial normal. Push añade
+suscripciones por sesión, cola transaccional solo de metadatos y envío HTTPS con
+VAPID/cifrado Web Push, reintentos acotados y revocación ante 404/410. Un proveedor
+lento no bloquea el bucle de cierre de votos y reconciliación.
+
+Subapartados y evidencia en [N7_RECUPERACION_PUSH.md](N7_RECUPERACION_PUSH.md).
+No se afirma homologación con navegadores/proveedores externos, SMTP ni staging.
+El siguiente nivel es N8; N9 mantiene las puertas de calidad/release globales.
 
 ## N8 · Operación (§§27, 30)
 

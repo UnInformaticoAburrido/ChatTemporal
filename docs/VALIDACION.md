@@ -1,5 +1,70 @@
 # Validación de la entrega
 
+## Continuación N7 · 2026-09-23
+
+Resultado final: **108 pruebas unitarias y 84 de integración correctas (192 total)**.
+Ruff y `git diff --check` correctos; mypy estricto sin errores en 50 módulos.
+No hay nuevas dependencias. Persisten las advertencias de deprecación de
+Starlette/httpx/AnyIO y Uvicorn/websockets ya registradas; no se ocultan.
+
+Servicios reales aislados: Python 3.14.4, PostgreSQL 18.6 y Redis 8.0.5. El entorno
+de `/tmp` desapareció durante la continuación; se reconstruyó en `.venv` y
+`artifacts/n7/runtime` con los locks existentes y paquetes extraídos, sin instalar
+servicios del sistema. PostgreSQL/Redis usan sockets Unix privados, WS usa puertos
+loopback y Push un servidor HTTPS local con certificado verificado. Los servicios
+se detienen al terminar. Evidencia del último runner: `/tmp/chat-persistence-test.Xs63k7`.
+Resúmenes de pruebas conservados en `artifacts/n7/unit.log` e `integration.log`,
+ignorados por Git. Evidencia por apartado en [N7_RECUPERACION_PUSH.md](N7_RECUPERACION_PUSH.md).
+
+Comprobaciones nuevas:
+
+- Transferencia entre dispositivos usando bootstrap/exchange real, una sola sesión
+  normal y permiso residual del anterior limitado a PUT para su sucesor. Se prueban
+  bloqueo de REST/WS/POST, caducidad, otro login, DELETE y logout del destino.
+- Blob máximo de 65536 bytes, 413 por exceso, carga concurrente única, campos
+  estrictos, propietario/sid, GET repetido, TTL no renovado y eliminación inmediata.
+  El secreto QR no forma parte del PUT ni del repr; ciphertext alterado y UUID/QR
+  incompatibles no se descifran.
+- Cliente que recifra historial local para una clave nueva, preservando orden y
+  metadatos opcionales. Frames compatibles con el parser; descifrado real en cliente.
+- Replay en dos instancias ASGI: begin/item/end, sequence e item_count exactos,
+  finalización, conexiones vinculadas, receptor offline, rechazo de terceros y
+  límite por replay. No se crean eventos/mensajes/deliveries normales ni jobs Push;
+  Redis conserva solo metadata del replay con TTL.
+- Suscripciones Push: upsert propio, conflicto de endpoint ajeno, revocación,
+  claves inválidas y destinos locales/privados rechazados. DNS mixto público/privado
+  falla cerrado. No se notifica a una suscripción de sesión sustituida.
+- Stored offline genera cola al aceptar el mensaje; retry no duplica jobs. Recibos
+  por suscripción evitan repetir éxitos al reintentar fallos. 404/410 revocan.
+  Ephemeral crea Push solo para offers offline; no se crea message_event por offer.
+- Vector conocido RFC 8291 exacto y petición HTTPS real a receptor local: TLS/SNI,
+  VAPID ES256, payload genérico cifrado y descifrado independiente con HMAC/AES-GCM.
+  Las IP públicas se enrutan a loopback exclusivamente dentro del test; producción
+  mantiene la validación de destinos y certificados.
+- Migraciones desde cero y desde cada revisión 0001–0006 hasta 0007_recovery_push.
+  Se conserva la suite previa de identidad, mensajería, votaciones y retención.
+
+Reproducción desde la raíz, con el entorno local preparado:
+
+```bash
+cd python
+../.venv/bin/python -m pytest -q -m 'not integration' -p no:cacheprovider
+../.venv/bin/ruff check .
+../.venv/bin/mypy chat chat_client
+cd ..
+LD_LIBRARY_PATH="$PWD/artifacts/n7/runtime/usr/lib/x86_64-linux-gnu" \
+CHAT_TEST_PG_BIN="$PWD/artifacts/n7/runtime/usr/lib/postgresql/18/bin" \
+CHAT_TEST_REDIS_SERVER="$PWD/artifacts/n7/runtime/usr/bin/redis-server" \
+CHAT_TEST_PYTHON="$PWD/.venv/bin/python" sh scripts/test_local_services.sh
+git diff --check
+```
+
+Límites: no se dispone de suscripción de navegador/proveedor Push real ni de
+proveedor SMTP real para homologación. Los tests HTTPS prueban protocolo y cifrado,
+no recepción en un navegador de producción. UI final, versiones Compose exactas,
+HTTPS/WSS de despliegue, staging y carga siguen pendientes. No se repite auditoría
+de dependencias ni se certifica producción. N8/N9 son los siguientes niveles.
+
 ## Continuación N6 · 2026-09-23
 
 Resultado: **93 pruebas unitarias y 71 de integración correctas (164 total)**.

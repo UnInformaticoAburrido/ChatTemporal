@@ -64,11 +64,12 @@ class Identity:
         return Registered(user=UserPrivate.model_validate(user, from_attributes=True),
                           recovery_mnemonic=phrase, tokens=tokens)
 
-    async def authenticate(self, access: str) -> Principal:
+    async def authenticate(self, access: str, *, transfer_upload: bool = False) -> Principal:
         claims = self.tokens.verify(access)
         assert claims.session_id is not None
         async with transaction() as unit:
-            user = await IdentityStore(unit.connection).authenticated(claims.user_id, claims.session_id)
+            user = await IdentityStore(unit.connection).authenticated(claims.user_id, claims.session_id,
+                                                                     transfer_upload=transfer_upload)
         return Principal(user, claims.session_id)
 
     async def recover(self, email: str, phrase: str) -> TokenPair:
@@ -97,10 +98,12 @@ class Identity:
             user = await store.user(claims.user_id, lock=True)
             if user is None or not user.is_active:
                 raise APIError("TOKEN_INVALID", 401, "Invalid token.")
-            # DEC-41: una sesión normal activa por usuario. El intercambio nuevo
-            # revoca las anteriores; coexistencia para transferencia sigue en N7.
+            # Una sola sesión normal; el predecesor solo podrá cargar el blob
+            # cifrado para este sucesor mediante la dependencia exclusiva de PUT.
+            source = await store.transfer_predecessor(user.id)
             revoked = await store.revoke(user.id)
             tokens = await self._session(store, user.id)
+            await store.transfer_grant(user.id, source, tokens.sid)
         await self.redis.revoke(revoked)
         return tokens
 

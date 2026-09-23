@@ -63,6 +63,25 @@ no reconstruir el censo desde miembros actuales. API devuelve `VOTE_UNSUPPORTED`
 y worker registra `vote_resolution_failed` si política/censo no son compatibles.
 Reiniciar API y worker tras migrar para cargar las rutas de votación y el scheduler.
 
+N7 requiere **0007_recovery_push**, sin nuevas bibliotecas. Añade permisos
+temporales de carga, session_id de suscripciones y cola/recibos de Push.
+Reiniciar API y worker después de migrar. Las suscripciones anteriores sin sid
+deben registrarse otra vez; no se les atribuye una sesión por aproximación.
+
+El dispositivo nuevo entra con bootstrap mediante exchange; el anterior pierde
+acceso normal y solo puede subir el blob destinado a ese sucesor mientras su
+access y permiso residual sean válidos. No compartir tokens entre dispositivos.
+DELETE confirma/cancela y elimina blob/metadatos y permiso residual. Redis perdido
+implica recrear la transferencia; nunca recurrir a disco para conservar el bundle.
+
+Push utiliza `VAPID_PRIVATE_KEY_FILE`, `vapid_public_key` y `vapid_subject`
+existentes. El cliente obtiene una suscripción de su navegador y registra
+endpoint/p256dh/auth_secret; la clave VAPID pública puede formar parte de su
+configuración pública, nunca la privada. Permitir DNS y salida HTTPS/443 desde
+worker hacia proveedores Push; no se permiten endpoints internos, redirecciones
+ni proxies de entorno. Conservar la verificación TLS. Para homologar, comprobar
+en un navegador real la recepción con stored offline y un offer antes de caducar.
+
 En este despliegue inicial se admite una ventana breve de mantenimiento:
 
 ```bash
@@ -179,6 +198,18 @@ Los clientes recuperan el resultado mediante GET; Pub/Sub no es durable.
 compatibilidad del censo/política. El heartbeat de limpieza no mide retraso de
 votos: métricas/alertas completas de scheduler continúan en N8.
 
+N7 ejecuta Push en un bucle separado para que un proveedor lento no detenga los
+votos. `push_failed` registra solo status HTTP, sin endpoint ni respuesta del
+proveedor; `push_worker_failed` señala un fallo de ciclo. Hasta cinco intentos
+por trabajo, con espera exponencial y nunca más allá del deadline. 404/410
+revocan suscripciones; un cambio de sesión las deja fuera del envío hasta
+registrarlas de nuevo. Un envío seguido de caída antes del commit puede duplicar
+el aviso: el cliente debe deduplicar por event_type/message_id.
+
+Los permisos de transferencia duran como máximo 24 h. Replay conserva solo
+metadatos Redis durante 15 min, ligados a conexiones; al reconectar empieza otro
+replay_id. No se guardan items de replay ni se amplía la retención normal del chat.
+
 `docker compose --profile observability up -d` activa Prometheus interno. Métricas
 actuales: readiness y edad de la última purga. Alertas iniciales: indisponibilidad
 y purga detenida. No se han configurado notificaciones ni métricas del host.
@@ -195,7 +226,8 @@ hasta contar con backup lógico cifrado y restauración ensayada. La política e
 - Incluir esquema/migraciones y datos de users, user_keys públicas, invitations,
   conversations, conversation_members; Push solo con cifrado.
 - Excluir datos de messages, message_events, message_deliveries, auth_sessions,
-  auth_refresh_tokens, email_verification_tokens, votes, vote_ballots, vote_eligible_members. Un `pg_dump`
+  auth_refresh_tokens, email_verification_tokens, votes, vote_ballots, vote_eligible_members,
+  transfer_upload_grants, push_jobs y push_job_deliveries. Un `pg_dump`
   completo sin exclusiones o snapshot de volumen contradiría la retención.
 - Prueba mensual de restore aislado, RPO≤6h/RTO≤2h. Verificar tablas excluidas
   vacías, metadatos durables presentes y reautenticación requerida.
