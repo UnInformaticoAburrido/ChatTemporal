@@ -5,10 +5,12 @@ import signal
 import time
 
 import psycopg
+from prometheus_client import CollectorRegistry, ProcessCollector, start_http_server
 from redis.asyncio import Redis
 
 from chat.config import Settings, load_settings, read_secret
 from chat.logging import event
+from chat.metrics import PUSH, TIMEOUTS, WORKER_ERRORS
 from chat.push import push_once
 from chat.reconciliation import reconcile_once
 from chat.voting import resolve_votes_once
@@ -58,6 +60,11 @@ async def cleanup_once() -> None:
 
 async def run() -> None:
     settings = load_settings()
+    registry = CollectorRegistry()
+    for metric in (PUSH, TIMEOUTS, WORKER_ERRORS):
+        registry.register(metric)
+    ProcessCollector(registry=registry)
+    start_http_server(8001, registry=registry)
     stopping = asyncio.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         asyncio.get_running_loop().add_signal_handler(sig, stopping.set)
@@ -78,6 +85,7 @@ async def push_loop(settings: Settings, stopping: asyncio.Event) -> None:
         try:
             await push_once(settings)
         except Exception:
+            WORKER_ERRORS.labels("push_worker").inc()
             event("push_worker_failed", service="worker", level="ERROR", error_code="TEMPORARY_UNAVAILABLE")
         try:
             await asyncio.wait_for(stopping.wait(), timeout=1)
@@ -90,6 +98,7 @@ async def maintenance(settings: Settings, stopping: asyncio.Event) -> None:
         try:
             await cleanup_once()
         except Exception:
+            WORKER_ERRORS.labels("cleanup").inc()
             event("cleanup_failed", service="worker", level="ERROR", error_code="TEMPORARY_UNAVAILABLE")
         try:
             async with asyncio.timeout(settings.cleanup_interval_seconds):
@@ -97,11 +106,13 @@ async def maintenance(settings: Settings, stopping: asyncio.Event) -> None:
                     try:
                         await resolve_votes_once()
                     except Exception:
+                        WORKER_ERRORS.labels("vote_resolution").inc()
                         event("vote_resolution_failed", service="worker", level="ERROR",
                               error_code="TEMPORARY_UNAVAILABLE")
                     try:
                         await reconcile_once(settings)
                     except Exception:
+                        WORKER_ERRORS.labels("reconcile").inc()
                         event("reconcile_failed", service="worker", level="ERROR", error_code="TEMPORARY_UNAVAILABLE")
                     try:
                         await asyncio.wait_for(stopping.wait(), timeout=1)

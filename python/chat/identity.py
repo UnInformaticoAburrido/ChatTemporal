@@ -21,6 +21,7 @@ from chat.identity_dto import (
 from chat.identity_redis import IdentityRedis
 from chat.identity_store import IdentityStore
 from chat.mailer import Mailer, SMTPMailer
+from chat.metrics import REUSE
 from chat.persistence import User, transaction
 
 
@@ -138,6 +139,8 @@ class Identity:
                 updated = await store.rotate(session, digest, token_hash(replacement))
                 tokens = TokenPair(access_token=self.tokens.access(owner, updated.id),
                                    refresh_token=replacement, sid=updated.id)
+        if reused:
+            REUSE.inc()
         await self.redis.revoke(revoked)
         if reused:
             raise APIError("REFRESH_REUSE_DETECTED", 401, "Refresh token reuse detected.")

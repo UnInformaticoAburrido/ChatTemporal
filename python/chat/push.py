@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 
 from chat.config import Settings
 from chat.logging import event
+from chat.metrics import PUSH
 from chat.persistence import UnitOfWork, transaction
 from chat.realtime_redis import RealtimeRedis
 from chat.web_push import send_push
@@ -65,6 +66,8 @@ async def push_once(settings: Settings) -> int:
                                                          str(subscription[2]), str(subscription[3]), payload, ttl)
                     except (OSError, ValueError, http.client.HTTPException):
                         status = 503
+                    if not 200 <= status < 300:
+                        PUSH.labels(str(status // 100) + "xx").inc()
                     if status in (404, 410):
                         await unit.connection.execute("""UPDATE web_push_subscriptions SET revoked_at=clock_timestamp()
                             WHERE id=%s AND p256dh=%s AND auth_secret=%s""", (subscription[0], subscription[2], subscription[3]))

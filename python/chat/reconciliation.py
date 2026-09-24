@@ -8,6 +8,7 @@ from chat.config import Settings
 from chat.delivery_store import DeliveryStore
 from chat.identity_redis import redis_connection
 from chat.messaging import failed
+from chat.metrics import TIMEOUTS
 from chat.persistence import transaction
 from chat.realtime_redis import RealtimeRedis, publish
 
@@ -50,6 +51,9 @@ async def reconcile_once(settings: Settings, *, disconnected: UUID | None = None
                 await redis.save(attempt)
                 notification = failed(UUID(attempt.message), UUID(attempt.conversation), reason, UUID(attempt.request))
         if notification:
+            reason = notification["payload"]["code"]
+            if reason in ("DELIVERY_TIMEOUT", "OFFER_TIMEOUT"):
+                TIMEOUTS.labels("delivery" if reason == "DELIVERY_TIMEOUT" else "offer").inc()
             await publish(candidate.sender, notification)
 
     # Incluye commit PostgreSQL seguido de caída antes de SET Redis, y reinicio
@@ -76,4 +80,7 @@ async def reconcile_once(settings: Settings, *, disconnected: UUID | None = None
                 notification = failed(state.message_id, state.conversation_id,
                                       "DELIVERY_TIMEOUT" if expired else "RECIPIENT_DISCONNECTED")
         if notification:
+            reason = notification["payload"]["code"]
+            if reason in ("DELIVERY_TIMEOUT", "OFFER_TIMEOUT"):
+                TIMEOUTS.labels("delivery" if reason == "DELIVERY_TIMEOUT" else "offer").inc()
             await publish(candidate_state.sender_id, notification)

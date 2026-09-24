@@ -6,8 +6,10 @@ Ya existen registro, verificación, recuperación, sesiones y edición de perfil
 N5 añade mensajería WebSocket stored/ephemeral sobre las invitaciones de N4.
 N6 completa las votaciones y la conservación/eliminación automática de la gracia.
 N7 añade transferencia de claves, replay de historial y Web Push genérico.
+N8 añade copias cifradas, métricas/alertas, retención de logs y apagado controlado.
 **El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
-N8–N9. El siguiente paso es N8: operación y seguridad.
+de homologación de N9. El siguiente paso es validar contenedores, CI y staging;
+N8 está implementado y probado localmente, con comprobaciones del host pendientes.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -17,18 +19,22 @@ N8–N9. El siguiente paso es N8: operación y seguridad.
 - [Validación realizada](docs/VALIDACION.md)
 - [N6 documentado por subapartados](docs/N6_VOTACIONES.md)
 - [N7 documentado por subapartados](docs/N7_RECUPERACION_PUSH.md)
+- [N8 documentado por subapartados](docs/N8_OPERACION_SEGURIDAD.md)
+- [Runbooks de backup, alertas, logs y despliegue](operations/README.md)
 
 ## Estructura
 
 ```text
 docker-compose.yml              producción: solo Caddy publica 80/443
 docker-compose.local.yml        desarrollo: solo 127.0.0.1:18080 (configurable)
+docker-compose.production.yml   producción: logs journald y filtrado de dependencias
 docker-compose.test.yml         pruebas en un proyecto separado
 python/                        fuentes FastAPI, worker, dependencias y pruebas
 BD/postgresql/                 configuración y migraciones Alembic
 BD/redis/                      configuración sin persistencia y scripts
 caddy/                         proxy, TLS y rutas públicas
-prometheus/                    recogida de métricas y alertas iniciales
+prometheus/                    métricas, reglas de alertas y pruebas de reglas
+operations/                    copias/restauración, exporters, Alertmanager y systemd
 scripts/                       preparación y comprobaciones
 secrets/                       archivos locales ignorados por Git
 docs/                          niveles, decisiones, operación y especificación
@@ -266,7 +272,7 @@ El servidor conserva ciphertext stored en PostgreSQL hasta su caducidad. Offline
 se consulta el historial REST. El ciphertext ephemeral reside solo en RAM/Redis,
 con TTL de entrega (60 s por defecto), y se borra tras ACK o desconexión. Una oferta
 sin send no crea message_events. Un receptor que conecta a tiempo recibe sus ofertas
-pendientes; Web Push se implementará en N7.
+pendientes; N7 añade Web Push genérico para receptores offline.
 
 Pub/Sub distribuye eventos entre instancias. Las sesiones se revalidan en cada
 operación y periódicamente en sockets ociosos. Si Redis pierde estado, se cierran
@@ -338,6 +344,27 @@ no seguir notificando un dispositivo sustituido. La cola y sus reintentos no
 garantizan exactamente una notificación si un proceso cae después del envío.
 La validación local no sustituye las pruebas con navegador/proveedor Push real.
 Ver [N7 por subapartados](docs/N7_RECUPERACION_PUSH.md) y [operación](docs/OPERACION.md).
+
+## Operación y seguridad (N8)
+
+- Copias lógicas AES-256-GCM cada seis horas, siete días de copias frecuentes y
+  cuatro semanales. Solo contienen esquema y datos durables; excluyen mensajes,
+  sesiones, votos, colas temporales y suscripciones Push. Restauración autenticada
+  en una base vacía y ensayo mensual aislado con objetivos RPO ≤6 h/RTO ≤2 h.
+- Métricas REST/WS, dependencias, purga, refresh reuse y Push; Prometheus alerta
+  sobre disponibilidad, capacidad, reloj, TLS, copias y fallos del canal de avisos.
+  Alertmanager requiere configurar el receptor SMTP y su contraseña fuera de Git.
+- El override de producción usa journald y filtrado de logs PostgreSQL/Redis.
+  Las unidades del host aplican retención temporal de catorce días; requieren
+  instalación y verificación por el operador.
+- SIGTERM cierra readiness y tickets nuevos, permite hasta quince segundos para
+  completar entregas en vuelo y cierra WebSockets con código 1001.
+
+No cambia el esquema: sigue vigente **0007_recovery_push**. Para producción usar
+ambos archivos Compose y el perfil `observability`, siguiendo los
+[runbooks](operations/README.md). La suite local valida restauración, exclusiones,
+alertas HTTP locales y drain; siguen pendientes la entrega SMTP real, journald,
+firewall, imágenes exactas y mediciones de capacidad en staging N9.
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con

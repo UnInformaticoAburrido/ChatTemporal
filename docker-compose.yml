@@ -205,6 +205,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=14d
+      - --log.format=json
     volumes:
       - ./prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
@@ -212,6 +213,59 @@ services:
       python:
         condition: service_healthy
     networks: [backend]
+    logging: *logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    profiles: [observability]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [--config.file=/etc/alertmanager/config.yml, --storage.path=/alertmanager, --log.format=json]
+    volumes:
+      - ./operations/alertmanager.yml:/etc/alertmanager/config.yml:ro
+      - alertmanager_data:/alertmanager
+    secrets: [alertmanager_smtp_password]
+    networks: [backend, egress]
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
+    profiles: [observability]
+    restart: unless-stopped
+    read_only: true
+    pid: host
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.meminfo
+      - --collector.filesystem
+      - --collector.timex
+      - --collector.textfile
+      - --collector.textfile.directory=/textfile
+      - --log.format=json
+    volumes:
+      - /:/host:ro,rslave
+      - ./artifacts/operations:/textfile:ro
+    networks: [backend]
+    logging: *logging
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.26.0@sha256:92e05d5fe0df01d3980518dc42f07b778a8997048b57392ebc7f7391ebd7bb06
+    profiles: [observability]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [--config.file=/etc/blackbox/config.yml, --log.format=json]
+    volumes:
+      - ./operations/blackbox.yml:/etc/blackbox/config.yml:ro
+    networks: [backend, egress]
     logging: *logging
 
 networks:
@@ -225,8 +279,11 @@ volumes:
   caddy_data: {}
   caddy_config: {}
   prometheus_data: {}
+  alertmanager_data: {}
 
 secrets:
+  alertmanager_smtp_password:
+    file: ./secrets/alertmanager_smtp_password
   postgres_password:
     file: ./secrets/postgres_password
   database_url:

@@ -5,6 +5,10 @@
 Antes de considerar un release de producto, cerrar N0–N9. Esta entrega prepara el
 despliegue de la infraestructura, no certifica el chat para usuarios reales.
 
+N8 incorpora los [runbooks operativos](../operations/README.md) para copias,
+restauración, alertas, retención temporal, rotación y rollback. En producción se
+deben cargar `docker-compose.yml` y `docker-compose.production.yml` juntos.
+
 1. Provisionar secretos según `secrets/README.md`; no usar .env en producción ni
    claves locales. Chat solo recibe las públicas de bootstrap de la aplicación
    principal. `DATABASE_URL` debe usar `postgresql://`, usuario/db `chat` y el
@@ -19,8 +23,9 @@ despliegue de la infraestructura, no certifica el chat para usuarios reales.
    oficial para inicializar datos y permisos.
 5. Revisar firewall, NTP y recursos del host. Redis es RAM; evitar swap/core dumps
    que vuelquen su memoria en disco. Habilitar observabilidad para release.
-6. `docker compose config --quiet`; después, solo cuando el release esté validado,
-   `docker compose --profile observability up --build -d --wait --wait-timeout 180`.
+6. `docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability config --quiet`;
+   después, solo cuando el release esté validado, seguir la secuencia de construcción,
+   migración y arranque de los runbooks N8.
 
 ## Actualizar código y esquema
 

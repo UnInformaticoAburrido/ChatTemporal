@@ -19,6 +19,7 @@ from chat.identity import Principal
 from chat.identity_redis import IdentityRedis, redis_connection
 from chat.identity_store import IdentityStore
 from chat.messaging import Messaging, failed
+from chat.metrics import FRAMES, WS, WS_ERRORS
 from chat.persistence import transaction
 from chat.protocol import decode_binary
 from chat.realtime_redis import RealtimeRedis
@@ -46,6 +47,7 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
             async with send_lock:
                 async with asyncio.timeout(5):
                     await socket.send_json(event)
+                    FRAMES.labels("out", event["type"]).inc()
 
         try:
             if app.state.draining:
@@ -85,8 +87,13 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
                         user = await IdentityStore(unit.connection).authenticated(user_id, sid)
                         verified(user)
                     principal = Principal(user, sid)
+                    if app.state.draining:
+                        await socket.close(code=1001)
+                        return
                     await socket.accept()
                     accepted = True
+                    WS.inc()
+                    app.state.sockets.add(socket)
                     await presence.presence(user_id, sid, connection)
                     ready = frame("session.ready", None, {"user_id": str(user_id), "sid": str(sid),
                                   "server_time": "", "heartbeat_interval_seconds": settings.ws_ping_interval_seconds})
@@ -113,6 +120,14 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
                             message = None
                             try:
                                 message = parse_frame(raw_frame.get("text", ""), settings)
+                                FRAMES.labels("in", message.type).inc()
+                                if app.state.draining:
+                                    if message.type not in ("message.ack", "message.ready", "message.send"):
+                                        raise unavailable()
+                                    if isinstance(message, MessageSend):
+                                        attempt = await presence.get(str(message.payload.message_id))
+                                        if attempt is None or attempt.phase not in ("offer", "ready"):
+                                            raise unavailable()
                                 if not await presence.connected(str(connection), str(user_id)):
                                     raise unavailable()
                                 if isinstance(message, ReplayItem):
@@ -133,6 +148,7 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
                                     await service.ack(principal, connection, message)
                                 rate_strikes = 0
                             except APIError as error:
+                                WS_ERRORS.labels(error.code).inc()
                                 if isinstance(message, MessageSend) and error.code in ("CONVERSATION_CLOSED", "VOTE_OPEN"):
                                     await send(failed(message.payload.message_id, message.conversation_id,
                                                       error.code, message.request_id))
@@ -197,7 +213,7 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
                         renewed = time.monotonic()
                         while True:
                             await asyncio.sleep(1)
-                            if app.state.draining:
+                            if app.state.draining and time.monotonic() >= app.state.drain_deadline:
                                 await socket.close(code=1001)
                                 return
                             # Redis perdido, sesión revocada o email cambiado: cerrar
@@ -216,7 +232,7 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
                     for task in done:
                         task.result()
         except APIError as error:
-            close_code = 4401 if error.status in (401, 403) else 1011
+            close_code = 1001 if app.state.draining else 4401 if error.status in (401, 403) else 1011
         except (RedisError, psycopg.OperationalError, TimeoutError):
             close_code = 1011
             if accepted:
@@ -228,6 +244,9 @@ def install_websocket(app: FastAPI, settings: Settings) -> None:
             # No registrar query/ticket ni excepción de dependencias con credenciales.
             close_code = 1011
         finally:
+            if accepted:
+                app.state.sockets.discard(socket)
+                WS.dec()
             for task in tasks:
                 task.cancel()
             if tasks:

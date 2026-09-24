@@ -1,0 +1,53 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'chat_ready{job="chat",instance="python:8000"}'
+        values: '0+0x60'
+      - series: 'chat_dependency_up{dependency="redis"}'
+        values: '0+0x60'
+      - series: 'chat_http_duration_seconds_count{endpoint="exchange",method="POST",status="500"}'
+        values: '0+10x60'
+      - series: 'chat_http_duration_seconds_count{endpoint="exchange",method="POST",status="200"}'
+        values: '0+90x60'
+      - series: 'chat_redis_oom_errors_total'
+        values: '0+1x60'
+      - series: 'node_timex_offset_seconds'
+        values: '3+0x60'
+      - series: 'chat_cleanup_lag_seconds'
+        values: '400+0x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ChatNotReady
+        exp_alerts:
+          - exp_labels: {job: chat, instance: 'python:8000', severity: critical}
+            exp_annotations: {summary: 'API no disponible durante dos minutos'}
+          - exp_labels: {job: chat, severity: critical}
+            exp_annotations: {summary: 'API no disponible durante dos minutos'}
+      - eval_time: 10m
+        alertname: ChatHTTPFailures
+        exp_alerts:
+          - exp_labels: {severity: high}
+            exp_annotations: {summary: 'Más del 5% de peticiones REST fallan'}
+      - eval_time: 10m
+        alertname: ChatDependencyDown
+        exp_alerts:
+          - exp_labels: {dependency: redis, severity: critical}
+            exp_annotations: {summary: 'PostgreSQL o Redis inaccesible'}
+      - eval_time: 10m
+        alertname: ChatRedisWritesRejected
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: 'Redis ha rechazado escrituras por falta de memoria'}
+      - eval_time: 10m
+        alertname: HostClockDrift
+        exp_alerts:
+          - exp_labels: {severity: high}
+            exp_annotations: {summary: 'Reloj desincronizado o deriva superior a dos segundos'}
+      - eval_time: 10m
+        alertname: ChatCleanupStalled
+        exp_alerts:
+          - exp_labels: {severity: high}
+            exp_annotations: {summary: 'Purga retrasada más de cinco minutos'}

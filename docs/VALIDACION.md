@@ -1,5 +1,65 @@
 # Validación de la entrega
 
+## Continuación N8 · 2026-09-24
+
+Resultado: **116 pruebas unitarias y 88 de integración correctas (204 total)**.
+La suite completa inicial pasó con 115 unitarias/88 de integración; después de
+corregir el estado de salida del wrapper se añadieron y ejecutaron sus pruebas
+de regresión, con las ocho pruebas de operación correctas. Ruff correcto con
+`python/pyproject.toml`, incluidos los scripts nuevos; mypy estricto sin errores
+en 52 módulos. Persisten las advertencias de deprecación documentadas en N7.
+
+Se reutilizaron `.venv` y `artifacts/n7/runtime`: Python 3.14.4, PostgreSQL 18.6
+y Redis 8.0.5, datos sintéticos en sockets privados y WS loopback. Evidencia:
+`/tmp/chat-persistence-test.ymnDRv`; los servicios se detuvieron al terminar.
+El sandbox bloquea sockets locales, por lo que las ejecuciones válidas de pytest
+y Alertmanager se hicieron fuera de él. No se usaron las bases del proyecto.
+
+Comprobaciones nuevas:
+
+- Backup cifrado por streaming, retención 7 días/4 semanas y modo 0600; un fallo
+  no publica archivos parciales ni elimina copias previas.
+- Restauración real de esquema/datos durables y Alembic, con tablas TTL actuales
+  y futuras vacías. Copia alterada rechazada antes de SQL; destino ocupado rechazado.
+- Métricas de dependencias con servicios reales y etiquetas sin path/query secretos.
+- SIGTERM real en el handler: readiness y nuevos tickets 503; stored ACK y
+  ephemeral ready/send/ACK en vuelo completan y los sockets cierran con 1001.
+- Logs de dependencias descartan el texto completo, conservan exit 7 ante fallo
+  y exit 0 tras un cierre limpio por TERM. Se corrigió el estado del wait interrumpido.
+- Compose local, producción/observability y tests válidos estructuralmente;
+  override journald sin opciones de rotación por tamaño, sin puertos internos publicados.
+- `promtool` 3.5.0: pruebas de reglas correctas; `amtool` 0.28.1: configuración
+  aceptada; Alertmanager 0.28.1 real entrega firing y resolved a HTTP loopback.
+- Servicios systemd corregidos a `TimeoutStartSec=2h`: RuntimeMaxSec no limita
+  servicios oneshot. La instalación y ejecución en el host siguen pendientes.
+
+Reproducción con herramientas locales ya preparadas:
+
+```bash
+cd python
+../.venv/bin/python -m pytest -q -m 'not integration'
+../.venv/bin/ruff check .
+../.venv/bin/mypy chat chat_client
+cd ..
+.venv/bin/ruff check --config python/pyproject.toml operations scripts/test_alert_delivery.py
+LD_LIBRARY_PATH="$PWD/artifacts/n7/runtime/usr/lib/x86_64-linux-gnu" \
+CHAT_TEST_PG_BIN="$PWD/artifacts/n7/runtime/usr/lib/postgresql/18/bin" \
+CHAT_TEST_REDIS_SERVER="$PWD/artifacts/n7/runtime/usr/bin/redis-server" \
+CHAT_TEST_PYTHON="$PWD/.venv/bin/python" sh scripts/test_local_services.sh
+artifacts/n8/tools/prometheus-3.5.0.linux-amd64/promtool test rules prometheus/alerts.test.yml
+artifacts/n8/tools/alertmanager-0.28.1.linux-amd64/amtool check-config operations/alertmanager.yml
+.venv/bin/python scripts/test_alert_delivery.py artifacts/n8/tools/alertmanager-0.28.1.linux-amd64/alertmanager
+docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability config --quiet
+git diff --check
+```
+
+Límites: Docker deniega acceso al socket del daemon, también fuera del sandbox.
+No se construyó la imagen de tests actualizada con cliente PostgreSQL 17 ni se
+ejecutaron las imágenes exactas de Compose. No se instalaron unidades del host,
+se cambió el firewall ni se enviaron correos externos. Faltan comprobaciones reales
+de SMTP, journald, NTP/TLS, recuperación a escala, auditorías de imágenes/dependencias,
+CI/cobertura, carga y staging N9. La interfaz cliente permanece pendiente.
+
 ## Continuación N7 · 2026-09-23
 
 Resultado final: **108 pruebas unitarias y 84 de integración correctas (192 total)**.

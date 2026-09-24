@@ -140,6 +140,21 @@ compatibilidad de esquema; todo mensaje nuevo debe incluirlo.
 | DEC-84 | Web Push usa RFC 8291/8292 sobre cryptography y PyJWT ya fijados: ECDH P-256 efímero, HKDF-SHA256, AES-128-GCM y VAPID ES256 con expiración de una hora. Solo cifra payload genérico permitido. Se verifica el vector RFC y un receptor HTTPS local independiente con verificación VAPID/descifrado; no se atribuye a un proveedor/browser real. |
 | DEC-85 | El worker procesa Push en una tarea separada de purga/votos/reconciliación, con lotes de 50 trabajos y timeouts de socket de 5 s. La migración 0007 añade permisos de transferencia, sesión de suscripción y cola/recibos de Push. Permisos vencidos y trabajos expirados se purgan; la cola temporal y sus recibos se excluyen de backups durables. No hay dependencias nuevas. |
 
+## Continuación N8 · Operación y seguridad
+
+| Decisión | Aplicación |
+|---|---|
+| DEC-86 | Backup lógico de snapshot único por lista positiva de datos durables; esquema completo y extensiones citext/pgcrypto. Se excluyen también suscripciones Push por depender de sesiones excluidas. AES-256-GCM con cabecera autenticada, nonce aleatorio y clave independiente de 32 bytes. Restaurar exige tag válido y base vacía; no se usa clean ni se respalda Redis. |
+| DEC-87 | Timers del host cada seis horas y ensayo mensual en base temporal con UUID. Retención de siete días y última copia de las cuatro semanas ISO más recientes con copias. Los servicios oneshot se limitan con TimeoutStartSec, no RuntimeMaxSec. Textfile publica solo tiempos numéricos; las copias y claves quedan fuera de Git. |
+| DEC-88 | Métricas por proceso con etiquetas controladas; API y worker se scrapean por separado. Se mide ocupación PostgreSQL real, sin afirmar que exista pool. Prometheus, Alertmanager y exporters permanecen internos. Receptor HTTP local prueba firing/resolved; SMTP del operador y alertas del host requieren homologación N9. |
+| DEC-89 | Producción usa override journald y política temporal del host de catorce días con vacuum horario, sujeta al límite de disco. PostgreSQL/Redis descartan el texto arbitrario de los logs para evitar contenido SQL sensible; se conserva el estado del hijo al reenviar TERM/INT. Caddy elimina datos de request y mensajes de error sin filtrar. Se acepta menor detalle diagnóstico. |
+| DEC-90 | El servidor inicia drain desde el handler de SIGTERM, bloquea readiness/tickets/nuevos sockets y permite hasta quince segundos para ACK y ready/send de ofertas existentes. Después cierra con 1001. Las pruebas aceleran el plazo usando el mismo handler; SIGKILL no garantiza entrega. No cambia la revisión Alembic 0007. |
+
+Detalles y límites en [N8_OPERACION_SEGURIDAD.md](N8_OPERACION_SEGURIDAD.md) y
+[runbooks de operación](../operations/README.md). El cliente PostgreSQL para las
+pruebas de restore procede de la misma imagen fijada de Compose, usando la
+[estructura de la imagen oficial](https://github.com/docker-library/postgres/blob/master/17/bookworm/Dockerfile).
+
 Fuentes de DEC-84: [cifrado Web Push, RFC 8291](https://www.rfc-editor.org/rfc/rfc8291.html)
 y [autenticación VAPID, RFC 8292](https://www.rfc-editor.org/rfc/rfc8292.html).
 El vector de prueba es público y no contiene credenciales de usuarios.

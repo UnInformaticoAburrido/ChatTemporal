@@ -56,4 +56,4 @@ with Redis.from_url(read_secret("REDIS_URL"), socket_timeout=1) as redis:
         raise RuntimeError("Redis temporal no disponible")
 command.upgrade(migration_config(), "head")
 PY
-"$CHAT_TEST_PYTHON" -m pytest -q -m integration -p no:cacheprovider
+"$CHAT_TEST_PYTHON" -m pytest -q -m integration -p no:cacheprovider "$@"
