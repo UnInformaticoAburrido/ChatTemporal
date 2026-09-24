@@ -10,7 +10,7 @@ staging, proveedores reales y capacidad del host siguen siendo puertas pendiente
 
 - Ruff sobre aplicación, pruebas y scripts; mypy estricto sobre los 52 módulos
   de aplicación/cliente; actionlint para el propio workflow.
-- Unitarias en Python 3.13.12 y pruebas de reglas Prometheus en la imagen fijada.
+- Unitarias en Python 3.13.15 y pruebas de reglas Prometheus en la imagen fijada.
 - Integración en la imagen de tests con PostgreSQL/Redis de Compose, migración
   inicial y pruebas de actualización desde revisiones previas. API/worker se
   arrancan para smoke después de los fixtures, evitando carreras con la purga.
@@ -57,6 +57,15 @@ en pip 25.1.1. Se actualiza a **26.2.0**, también al construir la imagen runtim
 La auditoría posterior de los locks no encuentra vulnerabilidades conocidas.
 La política CI es más estricta que el mínimo de severidad: pip-audit bloquea
 cualquier vulnerabilidad conocida; Trivy bloquea cualquier secreto y CVE crítico.
+
+La primera ejecución de CI pasó todas las pruebas de contenedores, pero bloqueó
+el release por CVE críticos en las imágenes antiguas. Se actualizan Python
+3.13.15/PostgreSQL 17.11 sobre Trixie y las imágenes de observabilidad (Prometheus
+3.14.0, Alertmanager 0.34.1, node-exporter 1.12.1, blackbox-exporter 0.28.0).
+Se mantienen las versiones mayores de Python y PostgreSQL. Las acciones pasan
+a versiones basadas en Node 24, siempre fijadas por SHA. El cambio de libc/ICU
+requiere revisar collations en bases existentes según los runbooks; no se aplica
+ningún cambio al host ni a datos existentes desde esta entrega.
 
 ## N9.3 · Matriz de aceptación §22
 

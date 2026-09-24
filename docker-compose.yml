@@ -53,7 +53,7 @@ x-python: &python
 
 services:
   postgresql:
-    image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+    image: postgres:17.11-trixie@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
     restart: unless-stopped
     environment:
       POSTGRES_DB: chat
@@ -197,7 +197,7 @@ services:
     logging: *logging
 
   prometheus:
-    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    image: prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
     # DEC-04: perfil opcional mientras se desarrolla; obligatorio antes de N9.
     profiles: [observability]
     restart: unless-stopped
@@ -216,7 +216,7 @@ services:
     logging: *logging
 
   alertmanager:
-    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    image: prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
     profiles: [observability]
     restart: unless-stopped
     read_only: true
@@ -231,7 +231,7 @@ services:
     logging: *logging
 
   node-exporter:
-    image: prom/node-exporter:v1.9.1@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
+    image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
     profiles: [observability]
     restart: unless-stopped
     read_only: true
@@ -256,7 +256,7 @@ services:
     logging: *logging
 
   blackbox-exporter:
-    image: prom/blackbox-exporter:v0.26.0@sha256:92e05d5fe0df01d3980518dc42f07b778a8997048b57392ebc7f7391ebd7bb06
+    image: prom/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc
     profiles: [observability]
     restart: unless-stopped
     read_only: true

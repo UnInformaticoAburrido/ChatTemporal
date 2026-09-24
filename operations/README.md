@@ -161,6 +161,20 @@ y el wrapper con las imágenes exactas deben verificarse en staging N9.
 
 ## 5. Despliegue, red y apagado
 
+N9 actualiza Python a 3.13.15 y PostgreSQL a 17.11 sobre Debian Trixie,
+manteniendo PostgreSQL 17 y Alembic 0007. Actualiza también Prometheus 3.14.0,
+Alertmanager 0.34.1, node-exporter 1.12.1 y blackbox-exporter 0.28.0, con digests
+fijados, para eliminar hallazgos críticos de las imágenes anteriores.
+
+Antes de reutilizar un volumen PostgreSQL creado sobre Bookworm, ensayar la
+actualización en una copia aislada y revisar versiones de collation libc/ICU.
+Un cambio de biblioteca puede alterar ordenación e índices de texto, incluido
+citext. El operador debe reconstruir los objetos afectados antes de actualizar
+su versión de collation; no basta con ocultar la advertencia mediante REFRESH.
+Consultar [ALTER COLLATION](https://www.postgresql.org/docs/17/sql-altercollation.html).
+Este repositorio no ejecuta REINDEX ni modificaciones sobre bases existentes.
+Repetir backup/restore y preparar rollback antes del cambio del host de producción.
+
 Readiness pasa a false al recibir SIGTERM; tickets nuevos y sockets nuevos se
 rechazan. Los sockets aceptados disponen de hasta quince segundos: ACK y
 ready/send de ofertas ya existentes pueden completar; no se inician ofertas ni
