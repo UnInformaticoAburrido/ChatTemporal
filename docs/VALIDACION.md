@@ -1,5 +1,53 @@
 # Validación de la entrega
 
+## Continuación N9 · 2026-09-24
+
+Se mantiene la suite N8 (116 unitarias + 88 de integración) y se añaden catorce
+pruebas unitarias de puertas de cobertura, arranque y fuzzing: **130 unitarias y
+88 de integración**. Se repite el flujo WS real modificado para verificar logs
+sin tokens/ciphertext/crypto_meta/texto/privada. Servicios locales: los mismos
+Python 3.14.4/PostgreSQL 18.6/Redis 8.0.5 documentados en N8.
+Evidencia de integración completa: `/tmp/chat-persistence-test.Th18S3`; flujo WS
+con comprobación de logs: `/tmp/chat-persistence-test.dsGGRs`.
+
+Coverage.py 7.10.7 mide todos los módulos `chat`/`chat_client`, sin omisiones:
+
+| Ámbito | Líneas cubiertas/totales | Cobertura | Mínimo |
+|---|---:|---:|---:|
+| Global | 2973/3280 | 90,64 % | 85 % |
+| Auth | 510/537 | 94,97 % | 90 % |
+| Invitations | 278/284 | 97,89 % | 90 % |
+| Delivery | 745/812 | 91,75 % | 90 % |
+| Voting | 142/149 | 95,30 % | 90 % |
+
+Ruff, mypy (52 módulos), actionlint 1.7.12, sintaxis shell y Compose de tests
+correctos. Trivy 0.74.0 no detecta secretos en el árbol de código local (excluidos
+`.git`, `.venv`, `secrets` y `artifacts`, que no forman parte del código a publicar).
+La auditoría inicial reportó doce entradas de seis avisos únicos para pip 25.1.1;
+tras fijar pip 26.2.0, pip-audit no detecta vulnerabilidades conocidas en los locks.
+Informes locales: `artifacts/n9/coverage.json`, `pip-audit.json` y `secrets-local.json`.
+
+Se corrige la infraestructura de tests: `requirements-client.lock` entra en el
+contexto Docker; el repositorio se monta read-only en `/workspace` para fixtures;
+los informes tienen montaje separado escribible; el worker arranca después de
+las pruebas para no competir con migraciones/expiraciones forzadas. El runner
+siempre ejecuta down del proyecto `chat-tests`, conservando sus volúmenes.
+
+Para reproducir cobertura local, desde `python/`: `python -m coverage run -m
+pytest -q -m 'not integration'`. Después ejecutar el runner local documentado en
+N8 con `CHAT_TEST_COVERAGE=1` para añadir integración, y desde `python/`:
+
+```sh
+../.venv/bin/python -m coverage json -o ../artifacts/n9/coverage.json
+../.venv/bin/python ../scripts/check_coverage.py ../artifacts/n9/coverage.json
+```
+
+CI usa Python 3.13.12 y las imágenes fijadas de Compose. Su resultado remoto y
+el escaneo de imágenes deben comprobarse en el SHA publicado; la validación
+local no los sustituye. No hay acceso local al daemon Docker. Staging, SMTP/Push,
+HTTPS/WSS, journald, firewall, carga y UI E2E siguen pendientes; ver
+[N9_HOMOLOGACION_RELEASE.md](N9_HOMOLOGACION_RELEASE.md).
+
 ## Continuación N8 · 2026-09-24
 
 Resultado: **116 pruebas unitarias y 88 de integración correctas (204 total)**.

@@ -2,3 +2,4 @@
 !Dockerfile
 !requirements.lock
 !requirements-dev.lock
+!requirements-client.lock

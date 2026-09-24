@@ -2,10 +2,28 @@
 set -eu
 # DEC-20: proyecto y volúmenes separados; nunca usar `down -v` sobre producción.
 # Generar antes los secretos locales. No se publican puertos en esta prueba.
-docker compose -p chat-tests -f docker-compose.yml -f docker-compose.local.yml build python
-docker compose -p chat-tests -f docker-compose.yml -f docker-compose.local.yml up -d --wait --wait-timeout 180 python worker
-docker compose -p chat-tests -f docker-compose.yml -f docker-compose.local.yml exec -T python python -m chat.healthcheck api
-# Las pruebas están en el host y se ejecutan en un contenedor de test sin Docker socket.
-docker build --target test -t chat-python-tests:0.1.0 python
-docker compose -p chat-tests -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.test.yml run --rm tests
-docker compose -p chat-tests -f docker-compose.yml -f docker-compose.local.yml down
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$root"
+compose() {
+    docker compose -p chat-tests -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.test.yml "$@"
+}
+cleanup() {
+    # También ante fallos; conservar volúmenes del proyecto de pruebas.
+    compose down --remove-orphans
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+compose build python tests
+compose up -d --wait --wait-timeout 180 postgresql redis
+compose run --rm --no-deps migrate
+# No ejecutar el worker durante fixtures que migran o fuerzan vencimientos.
+if [ "${CHAT_TEST_COVERAGE:-0}" = 1 ]; then
+    compose run --rm --no-deps tests python -m coverage run \
+        --data-file=/evidence/.coverage.integration -m pytest -q -m integration -p no:cacheprovider
+else
+    compose run --rm --no-deps tests
+fi
+compose up -d --wait --wait-timeout 180 python worker
+compose exec -T python python -m chat.healthcheck api
+compose exec -T worker python -m chat.healthcheck worker

@@ -7,9 +7,11 @@ N5 añade mensajería WebSocket stored/ephemeral sobre las invitaciones de N4.
 N6 completa las votaciones y la conservación/eliminación automática de la gracia.
 N7 añade transferencia de claves, replay de historial y Web Push genérico.
 N8 añade copias cifradas, métricas/alertas, retención de logs y apagado controlado.
+N9 incorpora CI, umbrales de cobertura, auditorías y pruebas adicionales de seguridad.
 **El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
 de homologación de N9. El siguiente paso es validar contenedores, CI y staging;
-N8 está implementado y probado localmente, con comprobaciones del host pendientes.
+N8 está implementado y probado localmente; N9 sigue en curso y conserva las
+comprobaciones de contenedores, proveedores, carga y host como puertas de release.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -20,6 +22,7 @@ N8 está implementado y probado localmente, con comprobaciones del host pendient
 - [N6 documentado por subapartados](docs/N6_VOTACIONES.md)
 - [N7 documentado por subapartados](docs/N7_RECUPERACION_PUSH.md)
 - [N8 documentado por subapartados](docs/N8_OPERACION_SEGURIDAD.md)
+- [N9: CI, cobertura y puertas pendientes de release](docs/N9_HOMOLOGACION_RELEASE.md)
 - [Runbooks de backup, alertas, logs y despliegue](operations/README.md)
 
 ## Estructura
@@ -124,6 +127,12 @@ dependencias, reconstruir la imagen. Las migraciones nuevas se ejecutan con el
 procedimiento explícito de [operación](docs/OPERACION.md).
 
 ## Comprobaciones
+
+GitHub Actions ejecuta `.github/workflows/quality.yml` en cada push/PR: lint,
+tipos, unitarias, integración en contenedores, cobertura y auditorías. Exige 85 %
+global y 90 % en cada dominio crítico (auth/invitations/delivery/voting). Los
+dominios y límites se detallan en [N9](docs/N9_HOMOLOGACION_RELEASE.md). El workflow
+no despliega y no sustituye las pruebas con el host, proveedores e interfaz reales.
 
 ```bash
 python3 -m venv .venv

@@ -89,8 +89,10 @@ async def open_socket(stack, url, api) -> ClientConnection:
     return ws
 
 
-def test_stored_delivery_two_instances_history_ack_and_duplicate(n4: tuple) -> None:
+def test_stored_delivery_two_instances_history_ack_and_duplicate(n4: tuple,
+                                                               capsys: pytest.CaptureFixture[str]) -> None:
     settings, users, _, tokens = n4
+    sensitive = list(tokens)
 
     async def run() -> None:
         async with server(settings) as (url_a, _), server(settings) as (url_b, _), \
@@ -103,6 +105,8 @@ def test_stored_delivery_two_instances_history_ack_and_duplicate(n4: tuple) -> N
             sender, recipient = KeyPair.generate(), KeyPair.generate()
             encrypted = encrypt_text("Hola por WebSocket", sender, recipient.public_key)
             message["payload"].update(ciphertext=encode_binary(encrypted.ciphertext), crypto_meta=encode_binary(encrypted.crypto_meta))
+            sensitive.extend([message["payload"]["ciphertext"], message["payload"]["crypto_meta"],
+                              "Hola por WebSocket", encode_binary(sender.private_key)])
             await a.send(json.dumps(message))
             incoming = (await received(b, "message.new"))["payload"]
             assert incoming["sender_role"] == "guest" and "sender_id" not in incoming
@@ -129,6 +133,10 @@ def test_stored_delivery_two_instances_history_ack_and_duplicate(n4: tuple) -> N
             await a.send(json.dumps(message))
             assert (await received(a, "system.error"))["payload"]["code"] == "MESSAGE_ID_CONFLICT"
     asyncio.run(run())
+    captured = capsys.readouterr()
+    logs = captured.out + captured.err
+    assert '"event_type": "http"' in logs
+    assert all(secret not in logs for secret in sensitive)
 
 
 def test_ephemeral_handshake_ack_after_upgrade_and_close(n4: tuple) -> None:

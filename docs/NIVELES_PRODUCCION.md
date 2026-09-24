@@ -22,7 +22,7 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 | N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Implementado y probado con REST/WS/worker y servicios reales locales; homologación Compose/staging pendiente |
 | N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Implementado y probado localmente con BD/Redis, WS y receptor HTTPS; proveedor/navegador real y homologación pendientes |
 | N8 · Operación y seguridad | N0–N7 | Backups/restauración, métricas/alertas completas, logs 14 días, despliegue y rotación | Restauración, fallos, secretos/logs e imagen auditados | Implementado y probado localmente; pendientes validación del host, imágenes y receptor SMTP real en N9 |
-| N9 · Homologación y release | N0–N8 | CI, integración/E2E, staging equivalente, carga y runbooks | Todos los criterios §22 y checklist §31 cumplidos | Pendiente |
+| N9 · Homologación y release | N0–N8 | CI, integración/E2E, staging equivalente, carga y runbooks | Todos los criterios §22 y checklist §31 cumplidos | En curso: CI/cobertura y auditoría Python implementadas; homologación de contenedores, E2E, staging y carga pendientes |
 
 No se estiman fechas sin equipo, hardware ni pico esperado. Cada nivel se cierra
 con evidencia reproducible; la existencia de una carpeta o un test simulado no
@@ -329,6 +329,16 @@ Requisitos de referencia que debe verificar el operador:
   cierre1001; probar con entregas en vuelo cuando N5 esté implementado.
 
 ## N9 · Calidad y release (§§22, 29, 31)
+
+### Continuación · 2026-09-24
+
+Se añade [N9_HOMOLOGACION_RELEASE.md](N9_HOMOLOGACION_RELEASE.md): CI en push/PR,
+cobertura global y por dominio con rechazo de informes incompletos, auditorías
+de dependencias/secretos/imágenes y matriz de criterios §22/checklist §31.
+La cobertura local supera los mínimos; se corrigen avisos de pip actualizando
+a 26.2.0. Fuzzing JWT/WS, arranque fail-closed y logs WS amplían la suite existente.
+No se considera cerrado N9 sin staging, clientes/proveedores reales y carga ≥2×
+el pico que debe definir el operador. Requisitos de referencia:
 
 - pytest completo; cobertura global ≥85 %, auth/invitations/delivery/voting ≥90 %.
 - Ruff, mypy estricto dominio/API, auditoría de dependencias y secretos; escaneo de
