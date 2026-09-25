@@ -168,7 +168,10 @@ Alertmanager 0.34.1 y node-exporter 1.12.1, con digests fijados. blackbox-export
 `operations/blackbox/Dockerfile` fija fuente, checksum y bases. Su imagen oficial
 todavía incluye las versiones vulnerables de Go/gRPC. PostgreSQL Debian conserva
 un libxml2 afectado sin corrección en esa distribución; la variante Alpine evita
-esa dependencia vulnerable y el helper Go afectado de la variante Debian.
+esa dependencia vulnerable. El helper gosu 1.19 se recompila desde su fuente
+oficial fijada con Go 1.26.8 en `BD/postgresql/Dockerfile`, porque ambas variantes
+oficiales incluyen un binario construido con Go vulnerable. El build comprueba
+el cambio al UID/GID de PostgreSQL y CI prueba el arranque desde un volumen vacío.
 
 **No conectar directamente un volumen PostgreSQL Debian a la nueva imagen Alpine.**
 Las instalaciones existentes deben conservar su release anterior hasta preparar
@@ -199,7 +202,7 @@ worker; construir, migrar una vez y arrancar solo si la migración tiene éxito:
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability config --quiet
 docker compose -f docker-compose.yml -f docker-compose.production.yml stop caddy python worker
-docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability build python caddy blackbox-exporter
+docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability build postgresql python caddy blackbox-exporter
 docker compose -f docker-compose.yml -f docker-compose.production.yml run --rm migrate
 # Solo tras exit code 0:
 docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability up -d --wait

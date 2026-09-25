@@ -5,6 +5,8 @@ import os
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import datetime
+from hashlib import sha256
+from ipaddress import IPv6Address
 from uuid import UUID, uuid4
 
 import httpx
@@ -49,7 +51,11 @@ def n4(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Itera
         connection.execute("DELETE FROM users WHERE id=ANY(%s)", (users,))
 
 
-def client(settings: Settings, token: str, ip: str = "127.0.0.1") -> httpx.AsyncClient:
+def client(settings: Settings, token: str, ip: str | None = None) -> httpx.AsyncClient:
+    # IP sintética estable por sesión: evita consumir cuotas de otros ensayos.
+    # Las pruebas de cuotas compartidas pasan una IP explícita.
+    if ip is None:
+        ip = str(IPv6Address(b"\x20\x01\x0d\xb8" + sha256(token.encode()).digest()[:12]))
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(settings), client=(ip, 123)),
                              base_url="http://test", headers={"Authorization": "Bearer " + token})
 

@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-compose build python tests caddy
+compose build postgresql python tests caddy
 compose up -d --wait --wait-timeout 180 postgresql redis
 compose run --rm --no-deps migrate
 # No ejecutar el worker durante fixtures que migran o fuerzan vencimientos.
