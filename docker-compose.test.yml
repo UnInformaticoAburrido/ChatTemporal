@@ -1,4 +1,7 @@
 services:
+  caddy:
+    ports: !override []
+    command: [caddy, run, --config, /etc/caddy/Caddyfile.test, --adapter, caddyfile]
   tests:
     extends:
       file: docker-compose.yml

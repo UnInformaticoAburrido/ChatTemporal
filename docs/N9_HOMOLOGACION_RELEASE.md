@@ -11,9 +11,14 @@ staging, proveedores reales y capacidad del host siguen siendo puertas pendiente
 - Ruff sobre aplicación, pruebas y scripts; mypy estricto sobre los 52 módulos
   de aplicación/cliente; actionlint para el propio workflow.
 - Unitarias en Python 3.13.15 y pruebas de reglas Prometheus en la imagen fijada.
+- Configuración Alertmanager 0.34.1 y entrega/resolución por HTTP loopback, sin
+  enviar correo externo; herramientas descargadas con checksum verificado.
 - Integración en la imagen de tests con PostgreSQL/Redis de Compose, migración
   inicial y pruebas de actualización desde revisiones previas. API/worker se
   arrancan para smoke después de los fixtures, evitando carreras con la purga.
+- Recorrido por Caddy con CA interna de prueba: TLS verificado, redirección HTTP,
+  rutas privadas ocultas, CORS y stored/ephemeral cifrados sobre WSS. No publica
+  puertos del host ni contacta ACME; solo copia el certificado público de la CA.
 - Cobertura combinada entre host y contenedor mediante rutas relativas.
 - Auditoría de todos los locks Python, secretos del código versionado e imágenes;
   vulnerabilidades críticas de las imágenes propias y todas las dependencias de

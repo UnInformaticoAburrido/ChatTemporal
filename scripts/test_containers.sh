@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-compose build python tests
+compose build python tests caddy
 compose up -d --wait --wait-timeout 180 postgresql redis
 compose run --rm --no-deps migrate
 # No ejecutar el worker durante fixtures que migran o fuerzan vencimientos.
@@ -27,3 +27,7 @@ fi
 compose up -d --wait --wait-timeout 180 python worker
 compose exec -T python python -m chat.healthcheck api
 compose exec -T worker python -m chat.healthcheck worker
+compose up -d --wait --wait-timeout 180 caddy
+compose cp caddy:/data/caddy/pki/authorities/local/root.crt artifacts/n9/test-root.crt
+chmod 644 artifacts/n9/test-root.crt
+compose run --rm --no-deps tests python /workspace/scripts/test_proxy.py

@@ -12,10 +12,22 @@ TOOLS = {
     "trivy": (
         "https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz",
         "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a",
+        "trivy",
     ),
     "actionlint": (
         "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
         "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+        "actionlint",
+    ),
+    "alertmanager": (
+        "https://github.com/prometheus/alertmanager/releases/download/v0.34.1/alertmanager-0.34.1.linux-amd64.tar.gz",
+        "265b9d1e55ef0d5306a436018af6d2b686c2ce051f03d968f7464ecb1372a7e8",
+        "alertmanager-0.34.1.linux-amd64/alertmanager",
+    ),
+    "amtool": (
+        "https://github.com/prometheus/alertmanager/releases/download/v0.34.1/alertmanager-0.34.1.linux-amd64.tar.gz",
+        "265b9d1e55ef0d5306a436018af6d2b686c2ce051f03d968f7464ecb1372a7e8",
+        "alertmanager-0.34.1.linux-amd64/amtool",
     ),
 }
 
@@ -23,14 +35,14 @@ TOOLS = {
 def install(name: str, directory: Path) -> None:
     if platform.system() != "Linux" or platform.machine() not in ("x86_64", "amd64"):
         raise RuntimeError("Este instalador requiere Linux amd64")
-    url, expected = TOOLS[name]
+    url, expected, member_name = TOOLS[name]
     with urllib.request.urlopen(url, timeout=60) as response:
         data = response.read()
     if hashlib.sha256(data).hexdigest() != expected:
         raise RuntimeError(f"Checksum incorrecto: {name}")
     # Extraer solo el ejecutable conocido, sin rutas ni enlaces del archivo.
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
-        member = archive.getmember(name)
+        member = archive.getmember(member_name)
         if not member.isfile():
             raise RuntimeError("El ejecutable no es un archivo regular")
         stream = archive.extractfile(member)

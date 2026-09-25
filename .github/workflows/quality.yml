@@ -34,6 +34,11 @@ jobs:
         run: |
           python scripts/install_ci_tools.py actionlint
           artifacts/n9/tools/actionlint -color
+      - name: Configuración y entrega de alertas sin correo externo
+        run: |
+          python scripts/install_ci_tools.py alertmanager amtool
+          artifacts/n9/tools/amtool check-config operations/alertmanager.yml
+          python scripts/test_alert_delivery.py artifacts/n9/tools/alertmanager
       - name: Reglas de alertas con la imagen fijada
         run: |
           image=$(docker compose --profile observability config --format json | python -c 'import json,sys; print(json.load(sys.stdin)["services"]["prometheus"]["image"])')
@@ -67,6 +72,7 @@ jobs:
           path: |
             artifacts/n9/coverage.json
             artifacts/n9/coverage.xml
+            artifacts/n9/proxy-smoke.json
           retention-days: 14
           if-no-files-found: ignore
 
