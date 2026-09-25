@@ -53,7 +53,9 @@ x-python: &python
 
 services:
   postgresql:
-    image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+    image: chat-postgres:17.11-chat1
+    build:
+      context: ./BD/postgresql
     restart: unless-stopped
     environment:
       POSTGRES_DB: chat
@@ -197,7 +199,7 @@ services:
     logging: *logging
 
   prometheus:
-    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    image: prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
     # DEC-04: perfil opcional mientras se desarrolla; obligatorio antes de N9.
     profiles: [observability]
     restart: unless-stopped
@@ -205,6 +207,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=14d
+      - --log.format=json
     volumes:
       - ./prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
@@ -212,6 +215,61 @@ services:
       python:
         condition: service_healthy
     networks: [backend]
+    logging: *logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+    profiles: [observability]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [--config.file=/etc/alertmanager/config.yml, --storage.path=/alertmanager, --log.format=json]
+    volumes:
+      - ./operations/alertmanager.yml:/etc/alertmanager/config.yml:ro
+      - alertmanager_data:/alertmanager
+    secrets: [alertmanager_smtp_password]
+    networks: [backend, egress]
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    profiles: [observability]
+    restart: unless-stopped
+    read_only: true
+    pid: host
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.meminfo
+      - --collector.filesystem
+      - --collector.timex
+      - --collector.textfile
+      - --collector.textfile.directory=/textfile
+      - --log.format=json
+    volumes:
+      - /:/host:ro,rslave
+      - ./artifacts/operations:/textfile:ro
+    networks: [backend]
+    logging: *logging
+
+  blackbox-exporter:
+    image: chat-blackbox:0.28.0-chat1
+    build:
+      context: ./operations/blackbox
+    profiles: [observability]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [--config.file=/etc/blackbox/config.yml, --log.format=json]
+    volumes:
+      - ./operations/blackbox.yml:/etc/blackbox/config.yml:ro
+    networks: [backend, egress]
     logging: *logging
 
 networks:
@@ -225,8 +283,11 @@ volumes:
   caddy_data: {}
   caddy_config: {}
   prometheus_data: {}
+  alertmanager_data: {}
 
 secrets:
+  alertmanager_smtp_password:
+    file: ./secrets/alertmanager_smtp_password
   postgres_password:
     file: ./secrets/postgres_password
   database_url:

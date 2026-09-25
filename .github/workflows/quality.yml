@@ -1,0 +1,115 @@
+name: Calidad N9
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13.15'
+      - name: Dependencias fijadas
+        run: python -m pip install -r python/requirements-dev.lock
+      - name: Lint y tipos
+        working-directory: python
+        run: |
+          ruff check --config pyproject.toml . ../scripts ../operations
+          mypy chat chat_client
+      - name: Validar workflow
+        run: |
+          python scripts/install_ci_tools.py actionlint
+          artifacts/n9/tools/actionlint -color
+      - name: Configuración y entrega de alertas sin correo externo
+        run: |
+          python scripts/install_ci_tools.py alertmanager amtool
+          artifacts/n9/tools/amtool check-config operations/alertmanager.yml
+          python scripts/test_alert_delivery.py artifacts/n9/tools/alertmanager
+      - name: Reglas de alertas con la imagen fijada
+        run: |
+          image=$(docker compose --profile observability config --format json | python -c 'import json,sys; print(json.load(sys.stdin)["services"]["prometheus"]["image"])')
+          docker run --rm --entrypoint promtool -v "$PWD/prometheus:/rules:ro" -w /rules "$image" test rules alerts.test.yml
+      - name: Unitarias con cobertura
+        working-directory: python
+        env:
+          COVERAGE_FILE: ${{ github.workspace }}/artifacts/n9/.coverage.unit
+        run: python -m coverage run -m pytest -q -m 'not integration'
+      - name: Preparar únicamente secretos sintéticos del runner
+        run: |
+          python scripts/init_local.py
+          sudo chown -R 1000:1000 secrets
+          sudo chown 1000:1000 python/config/settings.local.toml
+          sudo chmod 0777 artifacts/n9
+      - name: Integración con imágenes fijadas y smoke de arranque
+        env:
+          CHAT_TEST_COVERAGE: '1'
+        run: sh scripts/test_containers.sh
+      - name: Cobertura global y dominios críticos
+        working-directory: python
+        run: |
+          python -m coverage combine --keep ../artifacts/n9
+          python -m coverage json -o ../artifacts/n9/coverage.json
+          python -m coverage xml -o ../artifacts/n9/coverage.xml
+          python ../scripts/check_coverage.py ../artifacts/n9/coverage.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: coverage
+          path: |
+            artifacts/n9/coverage.json
+            artifacts/n9/coverage.xml
+            artifacts/n9/proxy-smoke.json
+            artifacts/n9/lifecycle.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13.15'
+      - name: Auditoría de todas las dependencias fijadas
+        run: |
+          python -m pip install -r python/requirements-dev.lock
+          mkdir -p artifacts/n9
+          python -m pip_audit -r python/requirements-dev.lock --no-deps --disable-pip --format json --output artifacts/n9/pip-audit.json
+      - name: Instalar escáner verificado
+        run: python scripts/install_ci_tools.py trivy
+      - name: Secretos del código versionado
+        run: |
+          mkdir -p artifacts/n9/source
+          git archive HEAD | tar -x -C artifacts/n9/source
+          artifacts/n9/tools/trivy fs --scanners secret --exit-code 1 --format json --output artifacts/n9/secrets.json artifacts/n9/source
+      - name: Construir imágenes propias
+        run: docker compose --profile observability build postgresql python caddy blackbox-exporter
+      - name: Vulnerabilidades críticas y secretos en todas las imágenes
+        run: sh scripts/scan_images.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: security
+          # Los informes de secretos pueden contener el valor detectado: no subirlos.
+          path: |
+            artifacts/n9/pip-audit.json
+            artifacts/n9/image-vuln-*.json
+          retention-days: 14
+          if-no-files-found: ignore

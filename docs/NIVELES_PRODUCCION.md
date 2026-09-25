@@ -20,9 +20,9 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 | N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | REST implementado; apertura de voto adelantada de N6. Eventos WS integrados en N5; homologación Compose/staging pendiente |
 | N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Implementado y probado con sockets y servicios locales reales; pendiente homologación Compose/staging y carga |
 | N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Implementado y probado con REST/WS/worker y servicios reales locales; homologación Compose/staging pendiente |
-| N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Pendiente |
-| N8 · Operación y seguridad | N0–N7 | Backups/restauración, métricas/alertas completas, logs 14 días, despliegue y rotación | Restauración, fallos, secretos/logs e imagen auditados | Métricas y alertas base; operación completa pendiente |
-| N9 · Homologación y release | N0–N8 | CI, integración/E2E, staging equivalente, carga y runbooks | Todos los criterios §22 y checklist §31 cumplidos | Pendiente |
+| N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Implementado y probado localmente con BD/Redis, WS y receptor HTTPS; proveedor/navegador real y homologación pendientes |
+| N8 · Operación y seguridad | N0–N7 | Backups/restauración, métricas/alertas completas, logs 14 días, despliegue y rotación | Restauración, fallos, secretos/logs e imagen auditados | Implementado y probado localmente; pendientes validación del host, imágenes y receptor SMTP real en N9 |
+| N9 · Homologación y release | N0–N8 | CI, integración/E2E, staging equivalente, carga y runbooks | Todos los criterios §22 y checklist §31 cumplidos | En curso: CI/cobertura y auditoría Python implementadas; homologación de contenedores, E2E, staging y carga pendientes |
 
 No se estiman fechas sin equipo, hardware ni pico esperado. Cada nivel se cierra
 con evidencia reproducible; la existencia de una carpeta o un test simulado no
@@ -278,10 +278,40 @@ El siguiente nivel funcional es N7; la interfaz final y homologación siguen pen
   Rate limit 100 frames/s por replay. Historial perdido sin copia se considera irrecuperable.
 - Push genérico: stored al aceptar send, ephemeral offer si offline. Solo metadatos
   permitidos, sin texto/ciphertext. SMTP y Web Push se prueban con proveedores reales.
-- Coexistencia de dos dispositivos solo para transferencia; autenticación de ambos
-  y límites de convivencia requieren concretar DUD-08 antes de implementar.
+- Coexistencia solo para transferencia: DUD-08 resuelta mediante permiso residual
+  de carga al sucesor, conservando una sola sesión normal (DEC-76).
+
+### Continuación N7 · 2026-09-23
+
+API 0.7.0 y migración 0007_recovery_push. Implementadas transferencias con carga
+única, TTL absoluto y autorización entre dispositivos limitada a PUT. El cliente
+de referencia cifra el bundle, prepara/valida contenido QR y recifra historial
+local en frames replay ordenados; no incluye interfaz para renderizar/escanear QR.
+
+Replay autoriza cada frame, vincula conexiones, verifica sequence/item_count y
+transporta ciphertext solo por Pub/Sub, sin escribir historial normal. Push añade
+suscripciones por sesión, cola transaccional solo de metadatos y envío HTTPS con
+VAPID/cifrado Web Push, reintentos acotados y revocación ante 404/410. Un proveedor
+lento no bloquea el bucle de cierre de votos y reconciliación.
+
+Subapartados y evidencia en [N7_RECUPERACION_PUSH.md](N7_RECUPERACION_PUSH.md).
+No se afirma homologación con navegadores/proveedores externos, SMTP ni staging.
+El siguiente nivel es N8; N9 mantiene las puertas de calidad/release globales.
 
 ## N8 · Operación (§§27, 30)
+
+### Continuación · 2026-09-24
+
+Implementación y evidencia por apartado en [N8_OPERACION_SEGURIDAD.md](N8_OPERACION_SEGURIDAD.md).
+116 pruebas unitarias y 88 de integración pasan. Backups cifrados y restauración
+real con exclusión de datos TTL; métricas/alertas con receptor HTTP local;
+configuración de journald y runbooks de host; drain WS stored/ephemeral probado.
+No hay nueva migración ni dependencias Python. El cliente PostgreSQL 17 se añade
+solo a la imagen de tests para ejecutar también allí la restauración.
+
+La puerta de producción permanece abierta: SMTP real, imágenes exactas, retención
+del host, firewall/NTP/TLS y recuperación a escala real requieren staging N9.
+Requisitos de referencia que debe verificar el operador:
 
 - Completar métricas REST/WS/errores/timeouts/memoria/pool/cleanup/reuse/Push y
   alertas §30.4 con receptor operativo real. Prometheus inicial no envía avisos.
@@ -299,6 +329,16 @@ El siguiente nivel funcional es N7; la interfaz final y homologación siguen pen
   cierre1001; probar con entregas en vuelo cuando N5 esté implementado.
 
 ## N9 · Calidad y release (§§22, 29, 31)
+
+### Continuación · 2026-09-24
+
+Se añade [N9_HOMOLOGACION_RELEASE.md](N9_HOMOLOGACION_RELEASE.md): CI en push/PR,
+cobertura global y por dominio con rechazo de informes incompletos, auditorías
+de dependencias/secretos/imágenes y matriz de criterios §22/checklist §31.
+La cobertura local supera los mínimos; se corrigen avisos de pip actualizando
+a 26.2.0. Fuzzing JWT/WS, arranque fail-closed y logs WS amplían la suite existente.
+No se considera cerrado N9 sin staging, clientes/proveedores reales y carga ≥2×
+el pico que debe definir el operador. Requisitos de referencia:
 
 - pytest completo; cobertura global ≥85 %, auth/invitations/delivery/voting ≥90 %.
 - Ruff, mypy estricto dominio/API, auditoría de dependencias y secretos; escaneo de

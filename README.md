@@ -5,8 +5,13 @@ infraestructura, migraciones, identidad REST, claves públicas y lecturas pagina
 Ya existen registro, verificación, recuperación, sesiones y edición de perfil.
 N5 añade mensajería WebSocket stored/ephemeral sobre las invitaciones de N4.
 N6 completa las votaciones y la conservación/eliminación automática de la gracia.
+N7 añade transferencia de claves, replay de historial y Web Push genérico.
+N8 añade copias cifradas, métricas/alertas, retención de logs y apagado controlado.
+N9 incorpora CI, umbrales de cobertura, auditorías y pruebas adicionales de seguridad.
 **El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
-N7–N9. El siguiente paso es N7: recuperación y Web Push.
+de homologación de N9. El siguiente paso es validar contenedores, CI y staging;
+N8 está implementado y probado localmente; N9 sigue en curso y conserva las
+comprobaciones de contenedores, proveedores, carga y host como puertas de release.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -15,18 +20,25 @@ N7–N9. El siguiente paso es N7: recuperación y Web Push.
 - [Especificación original](docs/especificacion_maestra_chat_produccion.docx)
 - [Validación realizada](docs/VALIDACION.md)
 - [N6 documentado por subapartados](docs/N6_VOTACIONES.md)
+- [N7 documentado por subapartados](docs/N7_RECUPERACION_PUSH.md)
+- [N8 documentado por subapartados](docs/N8_OPERACION_SEGURIDAD.md)
+- [N9: CI, cobertura y puertas pendientes de release](docs/N9_HOMOLOGACION_RELEASE.md)
+- [Preparar y ejecutar carga online verificable](docs/CARGA.md)
+- [Runbooks de backup, alertas, logs y despliegue](operations/README.md)
 
 ## Estructura
 
 ```text
 docker-compose.yml              producción: solo Caddy publica 80/443
 docker-compose.local.yml        desarrollo: solo 127.0.0.1:18080 (configurable)
+docker-compose.production.yml   producción: logs journald y filtrado de dependencias
 docker-compose.test.yml         pruebas en un proyecto separado
 python/                        fuentes FastAPI, worker, dependencias y pruebas
 BD/postgresql/                 configuración y migraciones Alembic
 BD/redis/                      configuración sin persistencia y scripts
 caddy/                         proxy, TLS y rutas públicas
-prometheus/                    recogida de métricas y alertas iniciales
+prometheus/                    métricas, reglas de alertas y pruebas de reglas
+operations/                    copias/restauración, exporters, Alertmanager y systemd
 scripts/                       preparación y comprobaciones
 secrets/                       archivos locales ignorados por Git
 docs/                          niveles, decisiones, operación y especificación
@@ -116,6 +128,12 @@ dependencias, reconstruir la imagen. Las migraciones nuevas se ejecutan con el
 procedimiento explícito de [operación](docs/OPERACION.md).
 
 ## Comprobaciones
+
+GitHub Actions ejecuta `.github/workflows/quality.yml` en cada push/PR: lint,
+tipos, unitarias, integración en contenedores, cobertura y auditorías. Exige 85 %
+global y 90 % en cada dominio crítico (auth/invitations/delivery/voting). Los
+dominios y límites se detallan en [N9](docs/N9_HOMOLOGACION_RELEASE.md). El workflow
+no despliega y no sustituye las pruebas con el host, proveedores e interfaz reales.
 
 ```bash
 python3 -m venv .venv
@@ -264,7 +282,7 @@ El servidor conserva ciphertext stored en PostgreSQL hasta su caducidad. Offline
 se consulta el historial REST. El ciphertext ephemeral reside solo en RAM/Redis,
 con TTL de entrega (60 s por defecto), y se borra tras ACK o desconexión. Una oferta
 sin send no crea message_events. Un receptor que conecta a tiempo recibe sus ofertas
-pendientes; Web Push se implementará en N7.
+pendientes; N7 añade Web Push genérico para receptores offline.
 
 Pub/Sub distribuye eventos entre instancias. Las sesiones se revalidan en cada
 operación y periódicamente en sockets ociosos. Si Redis pierde estado, se cierran
@@ -302,6 +320,61 @@ Pub/Sub no garantiza recuperación ni orden entre operaciones concurrentes:
 consultar GET al vencer el plazo y tras cortes; un resultado terminal no debe
 volver a open por un aviso atrasado. La interfaz cliente final sigue pendiente.
 Detalles, decisiones y pruebas en [N6 por subapartados](docs/N6_VOTACIONES.md).
+
+## Recuperación y Web Push (N7)
+
+- El dispositivo nuevo obtiene una sesión por `/auth/exchange` y crea una
+  transferencia con `POST /api/v1/key-transfers`. La sesión anterior queda
+  revocada para chat; conserva únicamente permiso para subir el blob cifrado
+  a su sucesor, hasta 24 h y sin renovar su access token.
+- El dispositivo anterior cifra el bundle localmente y ejecuta
+  `PUT /api/v1/key-transfers/{id}` con `{"encrypted_blob":"Base64URL"}`.
+  Solo admite una carga, máximo 65536 bytes. El secreto se comparte directamente
+  mediante QR; nunca se incluye en las peticiones al servidor.
+- El nuevo descarga mediante GET, descifra localmente y confirma con DELETE.
+  GET permite reintentos. DELETE elimina blob/metadatos y el permiso del anterior.
+  El TTL total comienza en POST y no se renueva al subir o descargar.
+- `chat_client.recovery` incluye cifrado/descifrado del bundle, contenido QR y
+  `replay_history` para volver a cifrar una copia local en orden. Renderizar/escanear
+  el QR y aplicar los mensajes recibidos corresponde a la interfaz cliente final.
+- `recovery.replay.begin/item/end` transportan el historial por WebSocket entre
+  participantes conectados en una conversación active. Se empieza en sequence=0,
+  se termina con item_count exacto y se limita a 100 items/s por replay. No se
+  insertan mensajes, eventos ni entregas normales. Tras un corte se reinicia con
+  otro replay_id; si nadie conserva una copia local, el historial es irrecuperable.
+- `POST /api/v1/push/subscriptions` recibe `{endpoint,p256dh,auth_secret}` y hace
+  upsert propio; DELETE `/api/v1/push/subscriptions/{id}` revoca. Se aceptan
+  endpoints HTTPS de puerto 443 y claves Web Push válidas. El worker envía
+  notificaciones genéricas de stored y offers ephemeral offline desde una cola
+  que contiene solo event_type/conversation_id/message_id y metadatos de reintento.
+
+Aplicar **0007_recovery_push** antes de reiniciar API y worker. Se utilizan las
+claves VAPID existentes. Las suscripciones se vinculan a la sesión vigente para
+no seguir notificando un dispositivo sustituido. La cola y sus reintentos no
+garantizan exactamente una notificación si un proceso cae después del envío.
+La validación local no sustituye las pruebas con navegador/proveedor Push real.
+Ver [N7 por subapartados](docs/N7_RECUPERACION_PUSH.md) y [operación](docs/OPERACION.md).
+
+## Operación y seguridad (N8)
+
+- Copias lógicas AES-256-GCM cada seis horas, siete días de copias frecuentes y
+  cuatro semanales. Solo contienen esquema y datos durables; excluyen mensajes,
+  sesiones, votos, colas temporales y suscripciones Push. Restauración autenticada
+  en una base vacía y ensayo mensual aislado con objetivos RPO ≤6 h/RTO ≤2 h.
+- Métricas REST/WS, dependencias, purga, refresh reuse y Push; Prometheus alerta
+  sobre disponibilidad, capacidad, reloj, TLS, copias y fallos del canal de avisos.
+  Alertmanager requiere configurar el receptor SMTP y su contraseña fuera de Git.
+- El override de producción usa journald y filtrado de logs PostgreSQL/Redis.
+  Las unidades del host aplican retención temporal de catorce días; requieren
+  instalación y verificación por el operador.
+- SIGTERM cierra readiness y tickets nuevos, permite hasta quince segundos para
+  completar entregas en vuelo y cierra WebSockets con código 1001.
+
+No cambia el esquema: sigue vigente **0007_recovery_push**. Para producción usar
+ambos archivos Compose y el perfil `observability`, siguiendo los
+[runbooks](operations/README.md). La suite local valida restauración, exclusiones,
+alertas HTTP locales y drain; siguen pendientes la entrega SMTP real, journald,
+firewall, imágenes exactas y mediciones de capacidad en staging N9.
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con

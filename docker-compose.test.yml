@@ -1,4 +1,7 @@
 services:
+  caddy:
+    ports: !override []
+    command: [caddy, run, --config, /etc/caddy/Caddyfile.test, --adapter, caddyfile]
   tests:
     extends:
       file: docker-compose.yml
@@ -8,11 +11,15 @@ services:
       context: ./python
       target: test
     restart: "no"
+    working_dir: /workspace/python
     environment:
       APP_ENV: test
       RUN_INTEGRATION: "1"
     volumes:
       - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
+      # Fixtures y contratos necesitan scripts, migraciones y configuración del repo.
+      - ./:/workspace:ro
+      - ./artifacts/n9:/evidence
     command: [python, -m, pytest, -q, -m, integration, -p, no:cacheprovider]
     healthcheck:
       disable: true

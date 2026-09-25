@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup Chat cada seis horas UTC
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00 UTC
+Persistent=true
+AccuracySec=1s
+[Install]
+WantedBy=timers.target

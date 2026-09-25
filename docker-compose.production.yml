@@ -1,0 +1,63 @@
+# Cargar junto con docker-compose.yml; preparar journald y secretos primero.
+services:
+  postgresql:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-postgresql
+    entrypoint: [sh, /operations/safe-service-log.sh, postgresql, docker-entrypoint.sh]
+    volumes:
+      - ./operations/safe-service-log.sh:/operations/safe-service-log.sh:ro
+  redis:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-redis
+    entrypoint: [sh, /operations/safe-service-log.sh, redis, docker-entrypoint.sh]
+    volumes:
+      - ./operations/safe-service-log.sh:/operations/safe-service-log.sh:ro
+  migrate:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-migrate
+  python:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-python
+  worker:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-worker
+  caddy-init:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-caddy-init
+  caddy:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-caddy
+  prometheus:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-prometheus
+  alertmanager:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-alertmanager
+  node-exporter:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-node-exporter
+  blackbox-exporter:
+    logging:
+      driver: journald
+      options: !override
+        tag: chat-blackbox-exporter
