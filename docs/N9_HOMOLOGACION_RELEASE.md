@@ -60,12 +60,20 @@ cualquier vulnerabilidad conocida; Trivy bloquea cualquier secreto y CVE crític
 
 La primera ejecución de CI pasó todas las pruebas de contenedores, pero bloqueó
 el release por CVE críticos en las imágenes antiguas. Se actualizan Python
-3.13.15/PostgreSQL 17.11 sobre Trixie y las imágenes de observabilidad (Prometheus
+3.13.15 sobre Trixie/PostgreSQL 17.11 sobre Alpine y las imágenes de observabilidad (Prometheus
 3.14.0, Alertmanager 0.34.1, node-exporter 1.12.1, blackbox-exporter 0.28.0).
 Se mantienen las versiones mayores de Python y PostgreSQL. Las acciones pasan
 a versiones basadas en Node 24, siempre fijadas por SHA. El cambio de libc/ICU
 requiere revisar collations en bases existentes según los runbooks; no se aplica
 ningún cambio al host ni a datos existentes desde esta entrega.
+
+La segunda auditoría dejó cuatro hallazgos en PostgreSQL Debian y el binario
+oficial blackbox. PostgreSQL pasa a Alpine 3.23; blackbox se reconstruye desde
+el commit oficial de v0.28.0 con Go 1.26.8 y gRPC 1.79.3. Bases y fuentes tienen
+checksum fijado. El cliente pg_dump de tests permanece en 17.11 sobre glibc,
+compatible con la imagen Python; no se copia el servidor Debian a runtime.
+No se debe conectar un volumen PostgreSQL Debian directamente a Alpine: revisar
+el procedimiento de migración lógica y rollback en los runbooks.
 
 ## N9.3 · Matriz de aceptación §22
 
@@ -91,6 +99,13 @@ registrar hardware, pico previsto, mezcla stored/ephemeral, frecuencia de mensaj
 duración, porcentaje offline y destino de staging. Ejecutar al menos 2× ese pico,
 medir latencia/errores/recursos/purga y contrastar UUID enviados con estados e
 historial para detectar duplicados, pérdidas silenciosas o corrupción.
+
+Implementado el [generador online y su procedimiento](CARGA.md), con cuentas
+dedicadas, barrera de conexiones, cifrado/descifrado real, estado REST e historial
+verificado. Sus pruebas ejercitan stored/ephemeral, detección de claves incorrectas
+y rechazo de pérdida, duplicados o corrupción. El pico previsto y staging siguen
+sin proporcionarse: solo se ejecutan ensayos funcionales locales, no se inventa
+una cifra de capacidad ni se declara superada la prueba ≥2× del producto.
 
 Checklist §31 todavía pendiente de evidencia del despliegue:
 

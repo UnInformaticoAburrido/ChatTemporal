@@ -161,13 +161,23 @@ y el wrapper con las imágenes exactas deben verificarse en staging N9.
 
 ## 5. Despliegue, red y apagado
 
-N9 actualiza Python a 3.13.15 y PostgreSQL a 17.11 sobre Debian Trixie,
+N9 actualiza Python a 3.13.15 sobre Debian Trixie y PostgreSQL a 17.11 sobre Alpine 3.23,
 manteniendo PostgreSQL 17 y Alembic 0007. Actualiza también Prometheus 3.14.0,
-Alertmanager 0.34.1, node-exporter 1.12.1 y blackbox-exporter 0.28.0, con digests
-fijados, para eliminar hallazgos críticos de las imágenes anteriores.
+Alertmanager 0.34.1 y node-exporter 1.12.1, con digests fijados. blackbox-exporter
+0.28.0 se reconstruye desde su commit oficial con Go 1.26.8 y gRPC 1.79.3:
+`operations/blackbox/Dockerfile` fija fuente, checksum y bases. Su imagen oficial
+todavía incluye las versiones vulnerables de Go/gRPC. PostgreSQL Debian conserva
+un libxml2 afectado sin corrección en esa distribución; la variante Alpine evita
+esa dependencia vulnerable y el helper Go afectado de la variante Debian.
 
-Antes de reutilizar un volumen PostgreSQL creado sobre Bookworm, ensayar la
-actualización en una copia aislada y revisar versiones de collation libc/ICU.
+**No conectar directamente un volumen PostgreSQL Debian a la nueva imagen Alpine.**
+Las instalaciones existentes deben conservar su release anterior hasta preparar
+y ensayar una migración lógica a un volumen nuevo, con plan de rollback, revisión
+de locales y conservación de las fechas TTL. No borrar el volumen anterior.
+La copia durable de N8 excluye el historial temporal: no usarla para una migración
+que pretenda conservar todos los datos. Una transferencia lógica temporal debe
+evitar copias persistentes de contenido TTL y respetar la política de retención.
+Revisar además versiones de collation libc/ICU en el destino.
 Un cambio de biblioteca puede alterar ordenación e índices de texto, incluido
 citext. El operador debe reconstruir los objetos afectados antes de actualizar
 su versión de collation; no basta con ocultar la advertencia mediante REFRESH.
@@ -189,7 +199,7 @@ worker; construir, migrar una vez y arrancar solo si la migración tiene éxito:
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability config --quiet
 docker compose -f docker-compose.yml -f docker-compose.production.yml stop caddy python worker
-docker compose -f docker-compose.yml -f docker-compose.production.yml build python caddy
+docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability build python caddy blackbox-exporter
 docker compose -f docker-compose.yml -f docker-compose.production.yml run --rm migrate
 # Solo tras exit code 0:
 docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability up -d --wait

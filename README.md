@@ -23,6 +23,7 @@ comprobaciones de contenedores, proveedores, carga y host como puertas de releas
 - [N7 documentado por subapartados](docs/N7_RECUPERACION_PUSH.md)
 - [N8 documentado por subapartados](docs/N8_OPERACION_SEGURIDAD.md)
 - [N9: CI, cobertura y puertas pendientes de release](docs/N9_HOMOLOGACION_RELEASE.md)
+- [Preparar y ejecutar carga online verificable](docs/CARGA.md)
 - [Runbooks de backup, alertas, logs y despliegue](operations/README.md)
 
 ## Estructura

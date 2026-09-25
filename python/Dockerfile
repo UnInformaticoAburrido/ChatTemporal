@@ -1,4 +1,5 @@
-# Cliente del mismo PostgreSQL que Compose, exclusivo de la imagen de pruebas.
+# Cliente PostgreSQL 17.11 sobre glibc para la imagen Python de pruebas.
+# El servidor Compose usa la misma versión PostgreSQL sobre Alpine.
 FROM postgres:17.11-trixie@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232 AS pg-client
 RUN mkdir -p /pg-client/bin /pg-client/lib \
     && cp /usr/lib/postgresql/17/bin/pg_dump /usr/lib/postgresql/17/bin/psql /pg-client/bin/ \

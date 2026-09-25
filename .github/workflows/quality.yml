@@ -93,7 +93,7 @@ jobs:
           git archive HEAD | tar -x -C artifacts/n9/source
           artifacts/n9/tools/trivy fs --scanners secret --exit-code 1 --format json --output artifacts/n9/secrets.json artifacts/n9/source
       - name: Construir imágenes propias
-        run: docker compose build python caddy
+        run: docker compose --profile observability build python caddy blackbox-exporter
       - name: Vulnerabilidades críticas y secretos en todas las imágenes
         run: sh scripts/scan_images.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
