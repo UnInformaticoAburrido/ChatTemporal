@@ -73,6 +73,7 @@ jobs:
             artifacts/n9/coverage.json
             artifacts/n9/coverage.xml
             artifacts/n9/proxy-smoke.json
+            artifacts/n9/lifecycle.json
           retention-days: 14
           if-no-files-found: ignore
 

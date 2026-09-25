@@ -40,12 +40,15 @@ async def run() -> None:
             db.execute("INSERT INTO user_keys(user_id,public_key) VALUES (%s,%s)", (user, encode_binary(key.public_key)))
     try:
         async with httpx.AsyncClient(base_url=ORIGIN, verify=tls, trust_env=False, timeout=10) as api:
+            print("Proxy: salud y rutas privadas.", flush=True)
             assert (await api.get("/health/live")).status_code == 200
             for path in ("/metrics", "/health/ready", "/docs", "/openapi.json"):
                 assert (await api.get(path)).status_code == 404
             assert (await api.get("/api/v1/users/me")).status_code == 401
+            print("Proxy: redirección HTTP.", flush=True)
             redirect = await api.get("http://caddy:8080/health/live")
             assert redirect.status_code == 308 and redirect.headers["location"] == ORIGIN + "/health/live"
+            print("Proxy: CORS y confianza TLS.", flush=True)
             denied = await api.options("/api/v1/users/me", headers={"Origin": "https://evil.invalid",
                                         "Access-Control-Request-Method": "GET"})
             assert denied.status_code == 400 and "access-control-allow-origin" not in denied.headers
@@ -58,6 +61,7 @@ async def run() -> None:
                 else:
                     raise AssertionError("La CA interna no debe estar en el trust store por defecto")
             pairs, votes = [], []
+            print("Proxy: invitaciones y votaciones.", flush=True)
             for index, mode in ((0, "stored"), (2, "ephemeral")):
                 host = {"Authorization": "Bearer " + tokens[index]}
                 guest = {"Authorization": "Bearer " + tokens[index + 1]}
@@ -81,6 +85,7 @@ async def run() -> None:
                         if response.json()["status"] != "open":
                             break
                         await asyncio.sleep(1)
+        print("Proxy: mensajería cifrada WSS.", flush=True)
         result = await benchmark(ORIGIN, pairs, expected_peak=2, duration=1, interval=.25, tls=tls)
         Path("/evidence/proxy-smoke.json").write_text(json.dumps(result, indent=2) + "\n")
         assert result["passed"], "Fallo del recorrido cifrado HTTPS/WSS"

@@ -27,6 +27,14 @@ fi
 compose up -d --wait --wait-timeout 180 python worker
 compose exec -T python python -m chat.healthcheck api
 compose exec -T worker python -m chat.healthcheck worker
+compose run --rm --no-deps tests python /workspace/scripts/test_container_lifecycle.py prepare
+compose stop postgresql redis
+compose run --rm --no-deps tests python /workspace/scripts/test_container_lifecycle.py unavailable
+# Mantener API/worker vivos: deben recuperarse sin recrearlos ni reiniciarlos.
+compose up -d --wait --wait-timeout 180 postgresql redis
+compose run --rm --no-deps tests python /workspace/scripts/test_container_lifecycle.py verify
+compose exec -T python python -m chat.healthcheck api
+compose exec -T worker python -m chat.healthcheck worker
 compose up -d --wait --wait-timeout 180 caddy
 compose cp caddy:/data/caddy/pki/authorities/local/root.crt artifacts/n9/test-root.crt
 chmod 644 artifacts/n9/test-root.crt

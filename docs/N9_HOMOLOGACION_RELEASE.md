@@ -1,6 +1,6 @@
 # N9 · Homologación y release
 
-Continuación de N8, 2026-09-24. Fuentes normativas: §§22, 29 y 31.
+Continuación de N8, actualizada 2026-09-25. Fuentes normativas: §§22, 29 y 31.
 **En curso; no autoriza un despliegue de producción.** La interfaz cliente,
 staging, proveedores reales y capacidad del host siguen siendo puertas pendientes.
 
@@ -16,6 +16,9 @@ staging, proveedores reales y capacidad del host siguen siendo puertas pendiente
 - Integración en la imagen de tests con PostgreSQL/Redis de Compose, migración
   inicial y pruebas de actualización desde revisiones previas. API/worker se
   arrancan para smoke después de los fixtures, evitando carreras con la purga.
+- Reinicio real de PostgreSQL/Redis: dato durable conservado, clave Redis sin
+  TTL desaparecida, readiness 503 durante la caída y recuperación de API/worker
+  sin reiniciarlos. La prueba usa únicamente datos sintéticos en `chat-tests`.
 - Recorrido por Caddy con CA interna de prueba: TLS verificado, redirección HTTP,
   rutas privadas ocultas, CORS y stored/ephemeral cifrados sobre WSS. No publica
   puertos del host ni contacta ACME; solo copia el certificado público de la CA.
@@ -79,6 +82,13 @@ checksum fijado. El cliente pg_dump de tests permanece en 17.11 sobre glibc,
 compatible con la imagen Python; no se copia el servidor Debian a runtime.
 No se debe conectar un volumen PostgreSQL Debian directamente a Alpine: revisar
 el procedimiento de migración lógica y rollback en los runbooks.
+
+La imagen Alpine también incluye gosu 1.19 construido con Go vulnerable
+(CVE-2025-68121). `BD/postgresql/Dockerfile` reconstruye el mismo commit oficial
+con Go 1.26.8 y verifica el cambio al UID/GID de PostgreSQL. No se excluye la CVE:
+la auditoría de las nueve imágenes queda sin críticos detectados. Las pruebas
+de conversaciones usan una IP sintética estable por sesión para no compartir
+cuotas entre ensayos; las pruebas de límites por IP mantienen sus IP explícitas.
 
 ## N9.3 · Matriz de aceptación §22
 
