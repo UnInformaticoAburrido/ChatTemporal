@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from alembic.script import ScriptDirectory
@@ -96,6 +97,15 @@ class Trial:
                  "/workspace/scripts/test_startup_containers.py", "--probe", phase, "--head", head)
 
 
+def isolated_url(value: str, service: str, scheme: str, port: int) -> bool:
+    try:
+        parsed = urlsplit(value)
+        return (parsed.scheme == scheme and parsed.hostname == service and parsed.port in (None, port)
+                and not parsed.query and not parsed.fragment)
+    except ValueError:
+        return False
+
+
 def probe(phase: str, head: str) -> None:
     if os.environ.get("APP_ENV") != "test" or os.environ.get("RUN_INTEGRATION") != "1":
         raise RuntimeError("Requiere el runner aislado de integración")
@@ -114,6 +124,12 @@ def probe(phase: str, head: str) -> None:
     sys.path.insert(0, str(ROOT / "python"))
     from chat.config import read_secret
 
+    if phase == "isolation":
+        # Rechazar DSN externos antes de ejecutar ninguna migración, incluso
+        # si el operador reutiliza por error archivos de secretos de otro entorno.
+        assert isolated_url(read_secret("DATABASE_URL"), "postgresql", "postgresql", 5432)
+        assert isolated_url(read_secret("REDIS_URL"), "redis", "redis", 6379)
+        return
     with psycopg.connect(read_secret("DATABASE_URL"), connect_timeout=5) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [(head,)]
         assert db.execute("SELECT to_regclass('public.n9_rollback_probe')").fetchone() == (None,)
@@ -134,6 +150,7 @@ def run() -> None:
             assert not any(service.get("ports") for service in services.values())
             print("Arranque: base aislada y migración inicial.", flush=True)
             trial.run("up", "-d", "--wait", "--wait-timeout", "150", "postgresql", "redis")
+            trial.probe("isolation", head)
             trial.run("run", "--rm", "--no-deps", "migrate")
 
             print("Arranque: migración SQL fallida bloquea API y worker.", flush=True)
@@ -179,7 +196,7 @@ def run() -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--probe", choices=("rollback", "waiting"))
+    parser.add_argument("--probe", choices=("isolation", "rollback", "waiting"))
     parser.add_argument("--head", default="")
     args = parser.parse_args()
     try:

@@ -151,6 +151,8 @@ Evidencia y comandos reproducibles en [VALIDACION.md](VALIDACION.md).
 `python scripts/test_startup_containers.py` reutiliza las imágenes ya construidas
 y los secretos locales sintéticos. Crea un proyecto con UUID, sin puertos del host,
 con volúmenes nuevos; la migración fallida solo existe en una copia temporal.
+Antes de migrar, rechaza URLs de dependencias ajenas a PostgreSQL/Redis del
+proyecto y parámetros que puedan redirigir la conexión a otro host.
 Elimina exclusivamente los recursos de ese proyecto al terminar y publica
 `startup-gates.json` tras comprobar también la limpieza. No modifica migraciones
 versionadas ni volúmenes existentes. Estos reinicios directos prueban el arranque

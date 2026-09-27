@@ -9,6 +9,9 @@ con exit 1 ante esa revisión pendiente y no imprimen el dato del error.
 **La nueva prueba pasa localmente** con PostgreSQL/Redis temporales, en cinco
 segundos; evidencia: `/tmp/chat-persistence-test.SEWi6e`. Ruff, actionlint,
 configuración Compose combinada y `git diff --check` correctos.
+Otras nueve pruebas unitarias verifican que el ensayo solo acepte las direcciones
+internas de Compose y rechace DSN externos, puertos distintos y host sobrescrito
+por parámetros, antes de ejecutar una migración.
 
 CI añade el ensayo `scripts/test_startup_containers.py` con las imágenes fijadas,
 en un proyecto aleatorio aislado: bloqueo de dependencias por migración fallida,
@@ -17,6 +20,12 @@ y recuperación sin otro reinicio al volver PostgreSQL/Redis. Conserva únicamen
 el resumen `startup-gates.json` y elimina sus volúmenes temporales. El reinicio
 completo del daemon o del host se reserva para staging. Comprobar el resultado
 de este paso en el SHA publicado antes de homologar la entrega.
+
+**Ensayo de contenedores superado** en `afa5dd5`:
+[CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36341591729).
+El informe acredita rollback, bloqueo por migración fallida, rechazo del esquema
+pendiente con arranque directo y recuperación de los mismos procesos al volver
+las dependencias. El job de seguridad también pasa.
 
 ## Continuación N9 · verificada 2026-09-27
 
