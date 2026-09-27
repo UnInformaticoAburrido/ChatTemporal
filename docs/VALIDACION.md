@@ -1,5 +1,57 @@
 # Validación de la entrega
 
+## Continuación N9 · verificada 2026-09-27
+
+CI de GitHub completa en verde para `1e1478aba35edacfd59c33b03b106f115a575a43`:
+[ejecución y artifacts](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36142194455).
+Python 3.13.15, PostgreSQL 17.11 y Redis 8.6.6 en las imágenes fijadas del repositorio.
+**136 unitarias y 90 pruebas de integración**; Ruff, mypy, actionlint y reglas
+Prometheus correctos. Alertmanager 0.34.1 entrega y resuelve alertas HTTP locales.
+
+| Ámbito | Líneas cubiertas/totales | Cobertura | Mínimo |
+|---|---:|---:|---:|
+| Global | 3174/3481 | 91,18 % | 85 % |
+| Auth | 542/569 | 95,25 % | 90 % |
+| Invitations | 302/308 | 98,05 % | 90 % |
+| Delivery | 813/880 | 92,39 % | 90 % |
+| Voting | 143/150 | 95,33 % | 90 % |
+
+La cobertura se combina entre unitarias e integración; los ensayos externos
+contra API/worker no aumentan ese numerador. Las diferencias frente al informe
+local anterior corresponden a los intérpretes usados (3.13 en CI, 3.14 local).
+
+Evidencia adicional en los artifacts de esa ejecución:
+
+- `lifecycle.json`: parada y arranque reales de PostgreSQL/Redis; cambia el
+  identificador de ambos procesos, PostgreSQL conserva el dato sintético y Redis
+  pierde una clave sin TTL. Liveness sigue en 200, readiness pasa a 503 durante
+  la caída y API/worker se recuperan sin reiniciarlos.
+- `proxy-smoke.json`: TLS con CA interna verificada, redirección HTTP, rutas
+  privadas ocultas, CORS, invitaciones/aceptación y ventana de voto real de 30 s.
+  Mensajería cifrada WSS en stored/ephemeral: cuatro sockets, siete mensajes
+  enviados/confirmados y dos historiales verificados. Es un ensayo funcional;
+  no demuestra capacidad para el pico de producción.
+- Nueve imágenes, incluida observabilidad: **cero vulnerabilidades críticas
+  detectadas**. Pip-audit y escaneos de secretos del código/imágenes correctos.
+  Se recompilan gosu y blackbox con Go corregido; no se excluyen CVE.
+
+No se ha desplegado ni modificado ningún volumen del usuario. La migración de
+PostgreSQL Debian a Alpine requiere el procedimiento y revisión de collations
+indicados en [operación](../operations/README.md#5-despliegue-red-y-apagado).
+Siguen pendientes interfaz cliente, SMTP/Push reales, staging, configuración del
+host (journald/firewall/NTP), capacidad ≥2× del pico definido por el operador y
+recuperación con volumen representativo. N9 permanece **en curso**.
+
+Validación posterior del filtro de logs: CI completa en verde para `21c1358`
+([ejecución](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36339011782)).
+**143 unitarias y 90 de integración**. El Compose de pruebas usa los mismos
+wrappers/volúmenes de logs que producción, con comprobación contra deriva de
+configuración. Se fuerza un error SQL con contenido sintético y se verifica que
+los logs de ambas dependencias solo tengan timestamp, level, service y event_type.
+`dependency-logs-check.json` publica únicamente resultado y conteos. Los logs
+originales no se suben. Las ocho pruebas locales del verificador incluyen rechazo
+de claves JSON duplicadas y diagnóstico de fallos sin repetir datos de entrada.
+
 ## Continuación N9 · 2026-09-24
 
 Se mantiene la suite N8 (116 unitarias + 88 de integración) y se añaden catorce

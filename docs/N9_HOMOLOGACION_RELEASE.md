@@ -1,6 +1,6 @@
 # N9 · Homologación y release
 
-Continuación de N8, actualizada 2026-09-25. Fuentes normativas: §§22, 29 y 31.
+Continuación de N8, actualizada 2026-09-27. Fuentes normativas: §§22, 29 y 31.
 **En curso; no autoriza un despliegue de producción.** La interfaz cliente,
 staging, proveedores reales y capacidad del host siguen siendo puertas pendientes.
 
@@ -19,6 +19,10 @@ staging, proveedores reales y capacidad del host siguen siendo puertas pendiente
 - Reinicio real de PostgreSQL/Redis: dato durable conservado, clave Redis sin
   TTL desaparecida, readiness 503 durante la caída y recuperación de API/worker
   sin reiniciarlos. La prueba usa únicamente datos sintéticos en `chat-tests`.
+- Filtros de logs de producción con PostgreSQL/Redis reales, incluido un error
+  SQL con un dato sintético que no debe aparecer. Un verificador exige eventos
+  JSON con exactamente los campos permitidos y evidencia de ambas dependencias.
+  Solo se publica el resumen de la comprobación, nunca los logs originales.
 - Recorrido por Caddy con CA interna de prueba: TLS verificado, redirección HTTP,
   rutas privadas ocultas, CORS y stored/ephemeral cifrados sobre WSS. No publica
   puertos del host ni contacta ACME; solo copia el certificado público de la CA.
@@ -98,8 +102,8 @@ proveedores del despliegue. Los módulos citados están bajo `python/tests/`.
 | Criterio | Evidencia automatizada | Pendiente de staging/cliente |
 |---|---|---|
 | Registro, BIP-39, refresh y bootstrap | test_identity, test_identity_integration | SMTP real y experiencia de recuperación |
-| WS autenticado y stored/ephemeral | test_websocket_integration | HTTPS/WSS con Caddy e interfaz |
-| TTL, purga y pérdida de estado Redis | test_integration, test_persistence_integration, test_websocket_integration | Lag bajo carga y reinicio de contenedores |
+| WS autenticado y stored/ephemeral | test_websocket_integration y test_proxy por Caddy HTTPS/WSS | Dominio/certificado público e interfaz |
+| TTL, purga y pérdida de estado Redis | test_integration, test_persistence_integration, test_websocket_integration y reinicio real con test_container_lifecycle | Lag bajo carga y reinicio completo del host |
 | Invitaciones, host/guest, gracia y cierre | test_invitation_codes, test_conversations_integration | Recorrido E2E desde la UI |
 | Votación, abstención y retención de gracia | test_voting, test_voting_integration | Aplicación local del resultado ephemeral |
 | Upgrade irreversible e idempotencia | test_conversations_integration, test_websocket_integration | Cortes/reintentos en el cliente final |

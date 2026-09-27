@@ -156,8 +156,9 @@ sin log_statement. Se pierde el detalle del motor intencionadamente; usar
 métricas y consultas administrativas acotadas para diagnóstico. Preserva código
 de salida y reenvía TERM/INT, incluido el fast shutdown de PostgreSQL.
 
-La configuración se entrega y valida estructuralmente; la retención de journald
-y el wrapper con las imágenes exactas deben verificarse en staging N9.
+CI ejecuta los wrappers con las imágenes fijadas y comprueba que los logs solo
+contienen los campos permitidos, incluso ante un error SQL con contenido sintético.
+La retención de journald y su integración con el host siguen pendientes de staging.
 
 ## 5. Despliegue, red y apagado
 

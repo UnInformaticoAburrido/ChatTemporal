@@ -6,10 +6,17 @@ from datetime import datetime
 from pathlib import Path
 
 
+def unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("Campos duplicados en el log")
+    return result
+
+
 def validate(lines: list[str]) -> dict[str, int]:
     counts = {"postgresql": 0, "redis": 0}
     for line in lines:
-        record = json.loads(line)
+        record = json.loads(line, object_pairs_hook=unique_fields)
         if not isinstance(record, dict) or set(record) != {"timestamp", "level", "service", "event_type"}:
             raise ValueError("Campos de log no permitidos")
         if record["service"] not in counts or record["level"] != "INFO" or record["event_type"] != "dependency_log":

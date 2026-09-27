@@ -9,9 +9,9 @@ N7 añade transferencia de claves, replay de historial y Web Push genérico.
 N8 añade copias cifradas, métricas/alertas, retención de logs y apagado controlado.
 N9 incorpora CI, umbrales de cobertura, auditorías y pruebas adicionales de seguridad.
 **El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
-de homologación de N9. El siguiente paso es validar contenedores, CI y staging;
-N8 está implementado y probado localmente; N9 sigue en curso y conserva las
-comprobaciones de contenedores, proveedores, carga y host como puertas de release.
+de homologación de N9. CI ya valida las imágenes fijadas, cobertura, seguridad,
+HTTPS/WSS y recuperación tras reiniciar PostgreSQL/Redis. N9 sigue en curso:
+quedan la interfaz, proveedores reales, carga y comprobaciones del host/staging.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -374,7 +374,7 @@ No cambia el esquema: sigue vigente **0007_recovery_push**. Para producción usa
 ambos archivos Compose y el perfil `observability`, siguiendo los
 [runbooks](operations/README.md). La suite local valida restauración, exclusiones,
 alertas HTTP locales y drain; siguen pendientes la entrega SMTP real, journald,
-firewall, imágenes exactas y mediciones de capacidad en staging N9.
+firewall y mediciones de capacidad en staging N9; CI ya ejecuta las imágenes fijadas.
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con

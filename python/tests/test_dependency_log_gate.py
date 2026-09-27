@@ -43,3 +43,9 @@ def test_gate_failure_does_not_echo_logs_or_keep_stale_success(tmp_path: Path) -
                             capture_output=True, text=True)
     assert result.returncode == 1 and "SECRET" not in result.stdout + result.stderr
     assert not report.exists() and source.read_text() == "raw SECRET from database\n"
+
+
+def test_gate_rejects_data_hidden_in_duplicate_json_fields() -> None:
+    line = json.dumps(record("postgresql")).replace('"level": "INFO"', '"level": "SECRET", "level": "INFO"')
+    with pytest.raises(ValueError, match="duplicados"):
+        gate.validate([json.dumps(record("redis")), line])
