@@ -23,6 +23,11 @@ staging, proveedores reales y capacidad del host siguen siendo puertas pendiente
   SQL con un dato sintético que no debe aparecer. Un verificador exige eventos
   JSON con exactamente los campos permitidos y evidencia de ambas dependencias.
   Solo se publica el resumen de la comprobación, nunca los logs originales.
+- Puertas de arranque en un proyecto Docker desechable: migración SQL fallida
+  con rollback transaccional, API/worker bloqueados por Compose y rechazo del
+  esquema pendiente con `docker start` directo. Después se reinician API/worker
+  con las dependencias detenidas: los puertos permanecen cerrados y se recuperan
+  los mismos procesos al arrancar PostgreSQL/Redis, sin ejecutar Compose.
 - Recorrido por Caddy con CA interna de prueba: TLS verificado, redirección HTTP,
   rutas privadas ocultas, CORS y stored/ephemeral cifrados sobre WSS. No publica
   puertos del host ni contacta ACME; solo copia el certificado público de la CA.
@@ -142,6 +147,15 @@ Checklist §31 todavía pendiente de evidencia del despliegue:
 No se modifican protecciones de rama ni se declara `main` lista para producción.
 El administrador debe requerir ambos jobs de calidad antes del merge.
 Evidencia y comandos reproducibles en [VALIDACION.md](VALIDACION.md).
+
+`python scripts/test_startup_containers.py` reutiliza las imágenes ya construidas
+y los secretos locales sintéticos. Crea un proyecto con UUID, sin puertos del host,
+con volúmenes nuevos; la migración fallida solo existe en una copia temporal.
+Elimina exclusivamente los recursos de ese proyecto al terminar y publica
+`startup-gates.json` tras comprobar también la limpieza. No modifica migraciones
+versionadas ni volúmenes existentes. Estos reinicios directos prueban el arranque
+sin la ordenación de Compose; reiniciar el daemon/host real sigue siendo una
+comprobación de staging.
 
 Referencias técnicas: [seguridad de GitHub Actions](https://docs.github.com/en/actions/reference/security/secure-use),
 [Coverage.py](https://coverage.readthedocs.io/),

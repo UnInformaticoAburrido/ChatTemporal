@@ -58,6 +58,8 @@ jobs:
         env:
           CHAT_TEST_COVERAGE: '1'
         run: sh scripts/test_containers.sh
+      - name: Migración fallida y reinicios directos sin Compose
+        run: python scripts/test_startup_containers.py
       - name: Cobertura global y dominios críticos
         working-directory: python
         run: |
@@ -75,6 +77,7 @@ jobs:
             artifacts/n9/proxy-smoke.json
             artifacts/n9/lifecycle.json
             artifacts/n9/dependency-logs-check.json
+            artifacts/n9/startup-gates.json
           retention-days: 14
           if-no-files-found: ignore
 

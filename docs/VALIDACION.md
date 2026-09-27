@@ -1,5 +1,23 @@
 # Validación de la entrega
 
+## Puertas de arranque · 2026-09-27
+
+Se añade `test_startup_gates_integration.py`: una migración crea una tabla y luego
+falla con un error SQL; la tabla se revierte y la versión Alembic permanece en
+`0007_recovery_push`. Los procesos reales de bootstrap de API/worker terminan
+con exit 1 ante esa revisión pendiente y no imprimen el dato del error.
+**La nueva prueba pasa localmente** con PostgreSQL/Redis temporales, en cinco
+segundos; evidencia: `/tmp/chat-persistence-test.SEWi6e`. Ruff, actionlint,
+configuración Compose combinada y `git diff --check` correctos.
+
+CI añade el ensayo `scripts/test_startup_containers.py` con las imágenes fijadas,
+en un proyecto aleatorio aislado: bloqueo de dependencias por migración fallida,
+arranque directo que rechaza el esquema pendiente, espera sin puertos abiertos
+y recuperación sin otro reinicio al volver PostgreSQL/Redis. Conserva únicamente
+el resumen `startup-gates.json` y elimina sus volúmenes temporales. El reinicio
+completo del daemon o del host se reserva para staging. Comprobar el resultado
+de este paso en el SHA publicado antes de homologar la entrega.
+
 ## Continuación N9 · verificada 2026-09-27
 
 CI de GitHub completa en verde para `1e1478aba35edacfd59c33b03b106f115a575a43`:
