@@ -31,6 +31,15 @@ def run(phase: str) -> None:
     with psycopg.connect(read_secret("DATABASE_URL"), connect_timeout=5) as db, \
             Redis.from_url(read_secret("REDIS_URL"), socket_timeout=5) as redis:
         if phase == "prepare":
+            REPORT.unlink(missing_ok=True)
+            # Forzar un error que contenga datos: el wrapper debe descartarlos.
+            try:
+                with db.transaction():
+                    db.execute("SELECT %s::integer", ("n9-sensitive-log-canary",))
+            except psycopg.errors.InvalidTextRepresentation:
+                pass
+            else:
+                raise AssertionError("No se generó el error de log esperado")
             identifier = uuid4()
             db.execute("""INSERT INTO users(id,nick,email,memory_hash,email_verified)
                 VALUES (%s,%s,%s,'lifecycle-test',true)""",

@@ -25,6 +25,7 @@ ORIGIN = "https://caddy:8443"
 async def run() -> None:
     if os.environ.get("APP_ENV") != "test" or os.environ.get("RUN_INTEGRATION") != "1":
         raise RuntimeError("Requiere el runner aislado de integración")
+    Path("/evidence/proxy-smoke.json").unlink(missing_ok=True)
     settings = load_settings()
     tls = ssl.create_default_context(cafile="/evidence/test-root.crt")
     users, sessions = [uuid4() for _ in range(4)], [uuid4() for _ in range(4)]

@@ -1,4 +1,12 @@
 services:
+  postgresql:
+    entrypoint: [sh, /operations/safe-service-log.sh, postgresql, docker-entrypoint.sh]
+    volumes:
+      - ./operations/safe-service-log.sh:/operations/safe-service-log.sh:ro
+  redis:
+    entrypoint: [sh, /operations/safe-service-log.sh, redis, docker-entrypoint.sh]
+    volumes:
+      - ./operations/safe-service-log.sh:/operations/safe-service-log.sh:ro
   caddy:
     ports: !override []
     command: [caddy, run, --config, /etc/caddy/Caddyfile.test, --adapter, caddyfile]

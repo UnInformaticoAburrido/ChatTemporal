@@ -87,11 +87,15 @@ worker hacia proveedores Push; no se permiten endpoints internos, redirecciones
 ni proxies de entorno. Conservar la verificación TLS. Para homologar, comprobar
 en un navegador real la recepción con stored offline y un offer antes de caducar.
 
-En este despliegue inicial se admite una ventana breve de mantenimiento:
+Antes de actualizar imágenes, revisar la migración de PostgreSQL Debian a Alpine
+en [el runbook N8/N9](../operations/README.md#5-despliegue-red-y-apagado).
+No conectar el volumen Debian existente a Alpine. El procedimiento siguiente
+presupone que el volumen de destino ya es compatible y ha sido validado.
+Se admite una ventana breve de mantenimiento:
 
 ```bash
 docker compose stop caddy python worker
-docker compose build python caddy
+docker compose --profile observability build postgresql python caddy blackbox-exporter
 docker compose run --rm migrate
 # Continuar solamente si el comando anterior terminó correctamente.
 docker compose --profile observability up -d --wait --wait-timeout 180

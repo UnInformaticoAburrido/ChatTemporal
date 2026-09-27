@@ -39,3 +39,5 @@ compose up -d --wait --wait-timeout 180 caddy
 compose cp caddy:/data/caddy/pki/authorities/local/root.crt artifacts/n9/test-root.crt
 chmod 644 artifacts/n9/test-root.crt
 compose run --rm --no-deps tests python /workspace/scripts/test_proxy.py
+compose logs --no-log-prefix --no-color postgresql redis > artifacts/n9/dependency-logs.jsonl
+python3 scripts/check_dependency_logs.py artifacts/n9/dependency-logs.jsonl artifacts/n9/dependency-logs-check.json

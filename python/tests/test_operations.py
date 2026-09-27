@@ -112,6 +112,15 @@ def test_production_logging_override_removes_size_only_options() -> None:
         '-f', str(root / 'docker-compose.production.yml'), '--profile', 'observability',
         'config', '--format', 'json'], cwd=root)
     services = json.loads(result)['services']
+    test_config = subprocess.check_output(['docker', 'compose', '-f', str(root / 'docker-compose.yml'),
+        '-f', str(root / 'docker-compose.local.yml'), '-f', str(root / 'docker-compose.test.yml'),
+        'config', '--format', 'json'], cwd=root)
+    tested = json.loads(test_config)['services']
+    for name in ('postgresql', 'redis'):
+        assert tested[name]['entrypoint'] == services[name]['entrypoint']
+        target = '/operations/safe-service-log.sh'
+        assert [v for v in tested[name]['volumes'] if v['target'] == target] == [
+            v for v in services[name]['volumes'] if v['target'] == target]
     for name, service in services.items():
         assert service['logging'] == {'driver': 'journald', 'options': {'tag': 'chat-' + name}}
         if name != 'caddy':
