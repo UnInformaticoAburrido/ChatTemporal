@@ -1,4 +1,4 @@
-"""Carga online N9 con cuentas dedicadas; no crea usuarios ni modifica claves."""
+"""Carga N9 online o stored con reconexiones; requiere cuentas dedicadas."""
 
 import argparse
 import asyncio
@@ -79,16 +79,40 @@ async def request(api: httpx.AsyncClient, method: str, path: str, status: int = 
     return response.json()
 
 
-async def received(socket, kind: str, message: str | None, timeout: float) -> dict:
+async def received(socket, kind: str, message: str | None, timeout: float, *,
+                   settled: dict[str, str] | None = None, request_id: str | None = None) -> dict:
     async with asyncio.timeout(timeout):
         while True:
             value = json.loads(await socket.recv())
             if value["type"] in ("system.error", "message.failed"):
                 raise LoadFailure("WS_REMOTE_ERROR")
+            # Los reintentos pueden producir recibos repetidos; no contarlos como
+            # otra entrega ni confundirlos con la confirmación del siguiente ID.
+            if (value["type"] == "message.delivered" and settled is not None
+                    and value["payload"].get("message_id") in settled
+                    and value["payload"]["message_id"] != message):
+                continue
             if value["type"] == kind:
                 if message is not None and value["payload"].get("message_id") != message:
                     raise LoadFailure("UNEXPECTED_MESSAGE")
+                if request_id is not None and value.get("request_id") != request_id:
+                    continue
                 return value["payload"]
+
+
+async def pending(api: httpx.AsyncClient, identifier: str, timeout: float) -> None:
+    # Tras enviar por WS, esperar solo el commit; cualquier estado terminal u
+    # otro error HTTP falla. No ocultar 429/503 con reintentos del escenario.
+    async with asyncio.timeout(timeout):
+        while True:
+            response = await api.get(f"/api/v1/messages/{identifier}/status")
+            if response.status_code == 200:
+                if response.json()["status"] != "pending":
+                    raise LoadFailure("OFFLINE_DELIVERY_NOT_PENDING")
+                return
+            if response.status_code != 404:
+                raise LoadFailure(f"HTTP_{response.status_code}")
+            await asyncio.sleep(.05)
 
 
 async def history(api: httpx.AsyncClient, pair: Pair, expected: dict[str, str]) -> None:
@@ -127,12 +151,19 @@ async def history(api: httpx.AsyncClient, pair: Pair, expected: dict[str, str]) 
 
 
 async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duration: float,
-                    interval: float, timeout: float = 10, tls: ssl.SSLContext | None = None) -> dict:
+                    interval: float, timeout: float = 10, tls: ssl.SSLContext | None = None,
+                    profile: str = "online", reconnect_every: int = 10, offline_seconds: float = 1) -> dict:
     if (expected_peak < 1 or len(pairs) != expected_peak or not 0 < duration <= 3600
             or not 0 < interval <= 3600 or not 0 < timeout <= 120):
         raise ValueError("Se requiere una pareja por usuario del pico previsto y tiempos positivos acotados")
+    if profile not in ("online", "stored-reconnect"):
+        raise ValueError("Perfil de carga desconocido")
+    if profile == "stored-reconnect" and (any(pair.mode != "stored" for pair in pairs)
+            or reconnect_every < 1 or not 0 < offline_seconds <= timeout):
+        raise ValueError("La reconexión requiere parejas stored, cadencia positiva y pausa dentro del timeout")
     tls = tls or ssl.create_default_context()
     stats = {"attempted": 0, "sent": 0, "confirmed": 0, "verified_pairs": 0, "peak_sockets": 0}
+    recovery = {"disconnect_cycles": 0, "reconnections": 0, "retries": 0}
     latencies: list[float] = []
     users: set[str] = set()
     opened = 0
@@ -164,18 +195,35 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
             sender_api, recipient_api = actors
             # Conversación dedicada y sin historial previo, antes de generar tráfico.
             await history(recipient_api, pair, {})
-            sockets = []
-            for api in actors:
-                ticket = await request(api, "POST", "/auth/ws-ticket", 201)
+            sockets: list = [None, None]
+            connected_before = [False, False]
+
+            async def open_socket(index: int):
+                nonlocal opened
+                ticket = await request(actors[index], "POST", "/auth/ws-ticket", 201)
                 kwargs = {"ssl": tls} if base.startswith("https://") else {}
-                socket = await stack.enter_async_context(connect(ws_url + "?ticket=" + ticket["ticket"],
-                    open_timeout=timeout, close_timeout=1, max_size=8192, proxy=None, **kwargs))
+                socket = await connect(ws_url + "?ticket=" + ticket["ticket"],
+                    open_timeout=timeout, close_timeout=1, max_size=8192, proxy=None, **kwargs)
+                sockets[index] = socket
+                opened += 1
+                stats["peak_sockets"] = max(stats["peak_sockets"], opened)
                 await received(socket, "session.ready", None, timeout)
-                sockets.append(socket)
-            sender, recipient = sockets
-            opened += 2
-            stats["peak_sockets"] = max(stats["peak_sockets"], opened)
+                if connected_before[index]:
+                    recovery["reconnections"] += 1
+                connected_before[index] = True
+                return socket
+
+            async def close_socket(index: int) -> None:
+                nonlocal opened
+                socket, sockets[index] = sockets[index], None
+                if socket is not None:
+                    try:
+                        await socket.close()
+                    finally:
+                        opened -= 1
+
             try:
+                sender, recipient = await open_socket(0), await open_socket(1)
                 await barrier.wait()
                 await release.wait()
                 expected: dict[str, str] = {}
@@ -184,23 +232,48 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
                     identifier = str(uuid4())
                     clear = "N9 synthetic " + identifier
                     encrypted = encrypt_text(clear, pair.sender, pair.recipient.public_key)
+                    recovering = profile == "stored-reconnect" and len(expected) % reconnect_every == 0
                     stats["attempted"] += 1
+                    if recovering:
+                        await close_socket(1)
+                        recovery["disconnect_cycles"] += 1
                     if pair.mode == "ephemeral":
                         await sender.send(json.dumps(frame("message.offer", pair.conversation, {"message_id": identifier})))
                         await received(recipient, "message.offer", identifier, timeout)
                         await recipient.send(json.dumps(frame("message.ready", pair.conversation, {"message_id": identifier})))
                         await received(sender, "message.ready", identifier, timeout)
-                    await sender.send(json.dumps(frame("message.send", pair.conversation, encrypted.payload(UUID(identifier)))))
+                    outgoing = frame("message.send", pair.conversation, encrypted.payload(UUID(identifier)))
+                    await sender.send(json.dumps(outgoing))
                     stats["sent"] += 1
-                    incoming = await received(recipient, "message.new", identifier, timeout)
-                    decrypted = decrypt_text(EncryptedMessage(
-                        decode_binary(incoming["ciphertext"], maximum=4096),
-                        decode_binary(incoming["crypto_meta"], minimum=56, maximum=56),
-                        incoming["protocol_version"]), pair.recipient)
-                    if decrypted != clear:
-                        raise LoadFailure("PAYLOAD_CORRUPTED")
+                    if recovering:
+                        await pending(sender_api, identifier, timeout)
+                        await close_socket(0)
+                        await asyncio.sleep(offline_seconds)
+                        sender = await open_socket(0)
+                        await sender.send(json.dumps(outgoing))
+                        recovery["retries"] += 1
+                        recipient = await open_socket(1)
+                        # Stored offline se recupera por REST; WS no promete
+                        # retransmitir message.new al abrir una conexión nueva.
+                        await history(recipient_api, pair, {**expected, identifier: clear})
+                    else:
+                        incoming = await received(recipient, "message.new", identifier, timeout)
+                        decrypted = decrypt_text(EncryptedMessage(
+                            decode_binary(incoming["ciphertext"], maximum=4096),
+                            decode_binary(incoming["crypto_meta"], minimum=56, maximum=56),
+                            incoming["protocol_version"]), pair.recipient)
+                        if decrypted != clear:
+                            raise LoadFailure("PAYLOAD_CORRUPTED")
                     await recipient.send(json.dumps(frame("message.ack", pair.conversation, {"message_id": identifier})))
-                    await received(sender, "message.delivered", identifier, timeout)
+                    await received(sender, "message.delivered", identifier, timeout, settled=expected)
+                    if recovering:
+                        # Repetir también tras ACK y exigir el recibo de este
+                        # request_id; no aceptar un aviso anterior como prueba.
+                        retry = frame("message.send", pair.conversation, encrypted.payload(UUID(identifier)))
+                        await sender.send(json.dumps(retry))
+                        recovery["retries"] += 1
+                        await received(sender, "message.delivered", identifier, timeout,
+                                       settled=expected, request_id=retry["request_id"])
                     latencies.append(time.monotonic() - tick)
                     state = await request(sender_api, "GET", f"/messages/{identifier}/status")
                     if state["status"] != "delivered":
@@ -208,6 +281,8 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
                     expected[identifier] = clear
                     stats["confirmed"] += 1
                     await asyncio.sleep(max(0, min(start + duration, tick + interval) - time.monotonic()))
+                if not expected:
+                    raise LoadFailure("PAIR_NO_TRAFFIC")
                 for socket in sockets:
                     pong = await socket.ping()
                     await asyncio.wait_for(pong, timeout)
@@ -215,7 +290,7 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
                 stats["verified_pairs"] += 1
                 await finish.wait()  # Mantener conexiones hasta terminar todas las parejas.
             finally:
-                opened -= 2
+                await asyncio.gather(*(close_socket(index) for index in (0, 1)))
 
     try:
         async with asyncio.timeout(duration + timeout * 20):
@@ -238,10 +313,16 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
         return round(ordered[max(0, math.ceil(len(ordered) * value) - 1)] * 1000, 3) if ordered else None
     passed = (not errors and stats["peak_sockets"] == expected_peak * 2 and stats["verified_pairs"] == len(pairs)
               and 0 < stats["attempted"] == stats["sent"] == stats["confirmed"])
-    return {"passed": passed, "profile": "online_closed_loop", "expected_peak_users": expected_peak,
+    if profile == "stored-reconnect":
+        passed = (passed and recovery["disconnect_cycles"] >= len(pairs)
+                  and recovery["retries"] == recovery["reconnections"] == 2 * recovery["disconnect_cycles"])
+    return {"passed": passed, "profile": "online_closed_loop" if profile == "online" else "stored_reconnect_closed_loop",
+            "expected_peak_users": expected_peak,
             "target_sockets": expected_peak * 2, "duration_seconds": duration, "interval_seconds": interval,
             "modes": {mode: sum(pair.mode == mode for pair in pairs) for mode in ("stored", "ephemeral")},
-            **stats, "latency_ms": {"p50": percentile(.5), "p95": percentile(.95), "max": percentile(1)},
+            **stats, **recovery, "reconnect_every": reconnect_every if profile != "online" else None,
+            "offline_seconds": offline_seconds if profile != "online" else None,
+            "latency_ms": {"p50": percentile(.5), "p95": percentile(.95), "max": percentile(1)},
             "errors": sorted(errors), "production_certified": False}
 
 
@@ -253,6 +334,9 @@ def main() -> int:
     parser.add_argument("--duration", type=float, required=True)
     parser.add_argument("--interval", type=float, required=True)
     parser.add_argument("--timeout", type=float, default=10)
+    parser.add_argument("--profile", choices=("online", "stored-reconnect"), default="online")
+    parser.add_argument("--reconnect-every", type=int, default=10)
+    parser.add_argument("--offline-seconds", type=float, default=1)
     parser.add_argument("--ca-file", type=Path)
     parser.add_argument("--allow-local-http", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
@@ -264,7 +348,8 @@ def main() -> int:
         pairs = read_pairs(args.accounts_file)
         tls = ssl.create_default_context(cafile=args.ca_file)
         result = asyncio.run(benchmark(base, pairs, expected_peak=args.expected_peak, duration=args.duration,
-                                        interval=args.interval, timeout=args.timeout, tls=tls))
+                                        interval=args.interval, timeout=args.timeout, tls=tls, profile=args.profile,
+                                        reconnect_every=args.reconnect_every, offline_seconds=args.offline_seconds))
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps({"passed": result["passed"], "confirmed": result["confirmed"], "errors": result["errors"]}))

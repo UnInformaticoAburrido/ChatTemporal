@@ -67,3 +67,47 @@ def test_history_rejects_missing_duplicate_and_corrupted_messages() -> None:
     asyncio.run(run([item, item], "HISTORY_DUPLICATE"))
     corrupt = encrypt_text("corrupted", sender, recipient.public_key).payload(UUID(identifier))
     asyncio.run(run([corrupt], "HISTORY_CORRUPTED"))
+
+
+def test_reconnect_profile_rejects_ephemeral_and_invalid_scenario_before_io() -> None:
+    import asyncio
+    key = KeyPair.generate()
+    ephemeral = load_tool.Pair(uuid4(), "ephemeral", "sender", "recipient", key, key)
+    stored = load_tool.Pair(uuid4(), "stored", "sender", "recipient", key, key)
+    for pair, options in ((ephemeral, {}), (stored, {"reconnect_every": 0}),
+                          (stored, {"offline_seconds": 0}), (stored, {"offline_seconds": 11})):
+        with pytest.raises(ValueError):
+            asyncio.run(load_tool.benchmark("https://test.invalid", [pair], expected_peak=1,
+                duration=1, interval=1, profile="stored-reconnect", **options))
+
+
+def test_retry_receipts_are_correlated_and_unknown_messages_are_rejected() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    previous, current, request = str(uuid4()), str(uuid4()), str(uuid4())
+    def receipt(identifier, rid):
+        return json.dumps({"type": "message.delivered", "request_id": rid,
+                           "payload": {"message_id": identifier}})
+    socket = AsyncMock()
+    socket.recv.side_effect = [receipt(previous, "old"), receipt(current, "old"), receipt(current, request)]
+    result = asyncio.run(load_tool.received(socket, "message.delivered", current, 1,
+                                           settled={previous: "already received"}, request_id=request))
+    assert result["message_id"] == current and socket.recv.await_count == 3
+    socket.recv.side_effect = [receipt(str(uuid4()), request)]
+    with pytest.raises(load_tool.LoadFailure, match="UNEXPECTED_MESSAGE"):
+        asyncio.run(load_tool.received(socket, "message.delivered", current, 1, settled={previous: "received"}))
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_pending_probe_does_not_hide_http_failures(status: int) -> None:
+    import asyncio
+
+    import httpx
+
+    async def run():
+        transport = httpx.MockTransport(lambda _: httpx.Response(status))
+        async with httpx.AsyncClient(base_url="https://test.invalid", transport=transport) as api:
+            with pytest.raises(load_tool.LoadFailure, match=f"HTTP_{status}"):
+                await load_tool.pending(api, str(uuid4()), 1)
+    asyncio.run(run())

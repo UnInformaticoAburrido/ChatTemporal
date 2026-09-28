@@ -20,8 +20,12 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(
 )]
 
 
-@pytest.mark.parametrize("mode", ["stored", "ephemeral"])
-def test_load_roundtrip_history_and_failure_before_sending(n4: tuple, mode: str) -> None:
+@pytest.mark.parametrize(("mode", "profile", "corrupt"), [
+    ("stored", "online", False), ("ephemeral", "online", False),
+    ("stored", "stored-reconnect", False), ("stored", "stored-reconnect", True),
+])
+def test_load_roundtrip_history_and_failure_before_sending(n4: tuple, mode: str, profile: str,
+                                                        corrupt: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     settings, _, _, tokens = n4
     keys = [KeyPair.generate(), KeyPair.generate()]
     async def run() -> None:
@@ -40,11 +44,30 @@ def test_load_roundtrip_history_and_failure_before_sending(n4: tuple, mode: str)
             from uuid import UUID
             base = url.removesuffix("/ws/v1").replace("ws://", "http://", 1)
             pair = load_tool.Pair(UUID(conversation), mode, tokens[1], tokens[0], keys[1], keys[0])
-            result = await load_tool.benchmark(base, [pair], expected_peak=1, duration=.3, interval=.1)
+            if corrupt:
+                monkeypatch.setattr(load_tool, "decrypt_text", lambda *args: "corrupted content")
+            result = await load_tool.benchmark(base, [pair], expected_peak=1,
+                                               duration=1.5 if profile == "stored-reconnect" else .3, interval=.1,
+                                               profile=profile, reconnect_every=2, offline_seconds=.05)
+            if corrupt:
+                assert not result["passed"] and result["confirmed"] == 0 and result["sent"] == 1
+                assert result["errors"] == ["HISTORY_CORRUPTED"]
+                with psycopg.connect(read_secret("DATABASE_URL")) as db:
+                    states = db.execute("""SELECT d.status FROM message_deliveries d
+                        JOIN message_events e ON e.id=d.message_id WHERE e.conversation_id=%s""", (conversation,)).fetchall()
+                    assert states == [("pending",)]  # Nunca ACK de contenido no verificado.
+                return
             assert result["passed"], result
             assert result["target_sockets"] == result["peak_sockets"] == 2
             assert result["attempted"] == result["confirmed"] >= 1
             assert result["verified_pairs"] == 1
+            if profile == "stored-reconnect":
+                assert result["disconnect_cycles"] >= 1
+                assert result["reconnections"] == result["retries"] == 2 * result["disconnect_cycles"]
+                with psycopg.connect(read_secret("DATABASE_URL")) as db:
+                    count = db.execute("""SELECT count(*) FROM messages m JOIN message_events e ON e.id=m.id
+                        WHERE e.conversation_id=%s""", (conversation,)).fetchone()[0]
+                    assert count == result["confirmed"]
             assert not result["production_certified"]
             assert not any(token in json.dumps(result) for token in tokens)
             wrong = load_tool.Pair(UUID(conversation), mode, tokens[1], tokens[0], KeyPair.generate(), keys[0])

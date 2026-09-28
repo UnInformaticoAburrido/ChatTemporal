@@ -1,5 +1,24 @@
 # Validación de la entrega
 
+## Carga con reconexiones · 2026-09-28
+
+El commit anterior `d1f8bfd`, incluidas las protecciones de aislamiento del ensayo
+de arranque, tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36341982999).
+
+Se añade el perfil `stored-reconnect` al generador de carga: receptor offline,
+confirmación REST de persistencia pending, reconexión con tickets nuevos,
+reenvíos del mismo ID/payload antes y después del ACK y recuperación/descifrado
+del historial. Comprueba un único registro por mensaje y correlaciona el recibo
+del último reenvío por request_id. Los recibos repetidos no suman entregas.
+
+Validación local: **10 pruebas de la herramienta y 4 de integración correctas**,
+con PostgreSQL/Redis temporales y sockets reales. Incluye los perfiles online
+stored/ephemeral, reconexión stored y rechazo de contenido corrupto antes del ACK
+(la entrega permanece pending). No se ocultan 429/503 ni IDs desconocidos.
+Evidencia: `/tmp/chat-persistence-test.4tFFlV`; Ruff/actionlint/diff correctos.
+CI repite estos escenarios con las imágenes fijadas. La prueba local no acredita
+capacidad: pico, hardware, duración sostenida y staging siguen pendientes.
+
 ## Puertas de arranque · 2026-09-27
 
 Se añade `test_startup_gates_integration.py`: una migración crea una tabla y luego
