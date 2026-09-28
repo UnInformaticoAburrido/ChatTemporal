@@ -1,16 +1,17 @@
-# Carga online y reconexiones de N9
+# Carga online, reconexiones y fallos efímeros de N9
 
 `scripts/load_chat.py` verifica tráfico real REST/WS cifrado con el cliente de
-referencia. Ambos perfiles son **unidireccionales y de bucle cerrado**: cada pareja
-espera la confirmación antes del siguiente mensaje.
+referencia. Los perfiles son **unidireccionales y de bucle cerrado**: cada pareja
+espera la confirmación o el fallo previsto antes del siguiente mensaje.
 
 | Perfil | Modos | Comportamiento |
 |---|---|---|
 | `online` (predeterminado) | stored/ephemeral | Conexiones mantenidas durante todo el tráfico |
 | `stored-reconnect` | Solo stored | Receptor offline, reconexión del emisor, reintentos antes/después del ACK y recuperación por historial |
+| `ephemeral-disconnect` | Solo ephemeral | Receptor desconectado antes del ACK, fallo confirmado, reenvío rechazado y nueva entrega tras reconectar |
 
-No representan por sí solos Push, registro, fallos de entrega ephemeral, cortes
-abruptos de red ni carga máxima sostenible. El perfil de reconexión cierra los
+No representan por sí solos Push, registro, todos los fallos ephemeral, cortes
+abruptos de red ni carga máxima sostenible. Los perfiles de reconexión cierran los
 sockets ordenadamente; no simula pérdida de paquetes o un enlace bloqueado.
 
 El operador aporta el pico esperado, duración y cadencia. La herramienta abre
@@ -18,7 +19,8 @@ El operador aporta el pico esperado, duración y cadencia. La herramienta abre
 con dos cuentas distintas por pareja. Todas esperan una barrera antes de enviar,
 y, en online, conservan las conexiones hasta que termine el grupo. En reconexión,
 esa cifra es el máximo inicial, **no concurrencia sostenida**. Cualquier fallo hace
-fallar el resultado; un timeout o 429 no se transforma en éxito mediante reintentos.
+fallar el resultado, salvo el fallo de entrega provocado y verificado en el perfil
+efímero; un timeout o 429 no se transforma en éxito mediante reintentos.
 
 ## Preparar cuentas dedicadas
 
@@ -97,6 +99,23 @@ una segunda vez tras la entrega, exigiendo el recibo asociado al nuevo request_i
 El historial debe conservar un único mensaje íntegro por ID. Los recibos repetidos
 de mensajes ya confirmados no suman entregas; los IDs desconocidos hacen fallar.
 
+Para comprobar la desconexión efímera, usar **solo conversaciones ephemeral** y
+añadir `--profile ephemeral-disconnect`, con los mismos parámetros de cadencia
+y pausa. En el primer ciclo y cada N entregas confirmadas, el receptor descifra
+el mensaje y cierra su socket **antes del ACK**. El emisor debe recibir
+`RECIPIENT_DISCONNECTED` y REST debe indicar failed. Tras la pausa, el receptor
+reconecta con un ticket nuevo; reenviar el ID/payload fallido debe producir
+`DELIVERY_TIMEOUT`, correlacionado con el request_id del reenvío, y conservar
+failed en REST. El historial debe seguir rechazado con HISTORY_NOT_STORED.
+
+Después se exige una entrega íntegra con **otro UUID**, incluyendo handshake y
+ACK, aunque se haya agotado la duración durante el fallo. `reconnect-every` cuenta
+entregas confirmadas; el mensaje fallido es un intento adicional. La pausa solo
+desconecta al receptor. Es un cierre ordenado, no una simulación de red bloqueada.
+La herramienta comprueba el contrato externo; las pruebas de integración también
+inspeccionan PostgreSQL y Redis para demostrar que ambos desenlaces dejan solo
+metadatos, sin fila de contenido ni payload transitorio.
+
 ## Interpretar y completar la homologación
 
 El informe contiene conexiones máximas, intentos, envíos, confirmaciones,
@@ -116,6 +135,13 @@ y sockets abiertos de nuevo. Recuperar el historial completo en cada ciclo añad
 tráfico de lectura: tenerlo en cuenta al comparar perfiles. Contenido corrupto o
 incompleto aborta el ensayo antes del ACK; nunca se informa como entrega correcta.
 
+En `ephemeral-disconnect`, `expected_failures` cuenta fallos provocados y
+verificados, separados de `confirmed`. Se exige `attempted = sent = confirmed +
+expected_failures`, una reconexión y un reenvío rechazado por ciclo. Los errores
+inesperados abortan. La latencia incluye únicamente mensajes confirmados, desde
+su nuevo handshake hasta el recibo de entrega; excluye la pausa y el intento
+fallido anterior. No interpretar ese percentil como tiempo de recuperación.
+
 Código de salida 0 significa que este escenario terminó correctamente; 1 indica
 fallo o configuración inválida. `production_certified` siempre es false.
 El ensayo local usa dos sockets y datos sintéticos para probar la herramienta;
@@ -123,6 +149,6 @@ El ensayo local usa dos sockets y datos sintéticos para probar la herramienta;
 
 Antes de cerrar N9, registrar SHA e imágenes exactos, hardware del servidor y del
 generador, origen de la estimación de pico, duración, mezcla y cadencia reales.
-Capturar recursos, latencia y purga en Prometheus. Ejecutar ambos perfiles y añadir
-fallos ephemeral, cortes abruptos, tormenta de tickets y duración sostenida necesarios para el producto,
+Capturar recursos, latencia y purga en Prometheus. Ejecutar los tres perfiles y añadir
+otros fallos ephemeral, cortes abruptos, tormenta de tickets y duración sostenida necesarios para el producto,
 además de los criterios SMTP/Push/HTTPS/UI de [N9](N9_HOMOLOGACION_RELEASE.md).

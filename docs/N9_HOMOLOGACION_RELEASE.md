@@ -124,12 +124,15 @@ duración, porcentaje offline y destino de staging. Ejecutar al menos 2× ese pi
 medir latencia/errores/recursos/purga y contrastar UUID enviados con estados e
 historial para detectar duplicados, pérdidas silenciosas o corrupción.
 
-Implementados los [perfiles online y stored con reconexiones](CARGA.md), con cuentas
+Implementados los [perfiles online, stored con reconexiones y fallo efímero](CARGA.md), con cuentas
 dedicadas, barrera de conexiones, cifrado/descifrado real, estado REST e historial
 verificado. Sus pruebas ejercitan stored/ephemeral, detección de claves incorrectas
 y rechazo de pérdida, duplicados o corrupción. El perfil stored recupera desde
 historial tras cerrar/reabrir sockets y reenvía el mismo ID antes/después del ACK,
-sin duplicar datos ni confirmar contenido corrupto. No simula cortes abruptos
+sin duplicar datos ni confirmar contenido corrupto. El perfil efímero corta antes
+del ACK, verifica failed y el rechazo del reenvío, y exige una entrega con otro ID
+tras reconectar; su integración comprueba la purga de payload y ausencia de
+contenido en PostgreSQL. Los fallos esperados se cuentan aparte. No simula cortes abruptos
 ni permite usar la concurrencia máxima como medida de carga sostenida.
 El pico previsto y staging siguen
 sin proporcionarse: solo se ejecutan ensayos funcionales locales, no se inventa

@@ -1,4 +1,4 @@
-"""Carga N9 online o stored con reconexiones; requiere cuentas dedicadas."""
+"""Carga N9 online, reconexiones stored y fallos ephemeral; requiere cuentas dedicadas."""
 
 import argparse
 import asyncio
@@ -80,12 +80,17 @@ async def request(api: httpx.AsyncClient, method: str, path: str, status: int = 
 
 
 async def received(socket, kind: str, message: str | None, timeout: float, *,
-                   settled: dict[str, str] | None = None, request_id: str | None = None) -> dict:
+                   settled: dict[str, str] | None = None, request_id: str | None = None,
+                   failure_code: str | None = None) -> dict:
     async with asyncio.timeout(timeout):
         while True:
             value = json.loads(await socket.recv())
-            if value["type"] in ("system.error", "message.failed"):
+            if value["type"] == "system.error" or (value["type"] == "message.failed" and kind != "message.failed"):
                 raise LoadFailure("WS_REMOTE_ERROR")
+            if kind == "message.failed" and value["type"] == "message.delivered":
+                raise LoadFailure("UNEXPECTED_DELIVERY")
+            if value["type"] == "message.new" and kind != "message.new":
+                raise LoadFailure("UNEXPECTED_MESSAGE")
             # Los reintentos pueden producir recibos repetidos; no contarlos como
             # otra entrega ni confundirlos con la confirmación del siguiente ID.
             if (value["type"] == "message.delivered" and settled is not None
@@ -97,6 +102,8 @@ async def received(socket, kind: str, message: str | None, timeout: float, *,
                     raise LoadFailure("UNEXPECTED_MESSAGE")
                 if request_id is not None and value.get("request_id") != request_id:
                     continue
+                if kind == "message.failed" and (failure_code is None or value["payload"].get("code") != failure_code):
+                    raise LoadFailure("UNEXPECTED_FAILURE")
                 return value["payload"]
 
 
@@ -156,14 +163,15 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
     if (expected_peak < 1 or len(pairs) != expected_peak or not 0 < duration <= 3600
             or not 0 < interval <= 3600 or not 0 < timeout <= 120):
         raise ValueError("Se requiere una pareja por usuario del pico previsto y tiempos positivos acotados")
-    if profile not in ("online", "stored-reconnect"):
+    if profile not in ("online", "stored-reconnect", "ephemeral-disconnect"):
         raise ValueError("Perfil de carga desconocido")
-    if profile == "stored-reconnect" and (any(pair.mode != "stored" for pair in pairs)
+    required_mode = "stored" if profile == "stored-reconnect" else "ephemeral"
+    if profile != "online" and (any(pair.mode != required_mode for pair in pairs)
             or reconnect_every < 1 or not 0 < offline_seconds <= timeout):
-        raise ValueError("La reconexión requiere parejas stored, cadencia positiva y pausa dentro del timeout")
+        raise ValueError("La reconexión requiere parejas del modo del perfil, cadencia positiva y pausa dentro del timeout")
     tls = tls or ssl.create_default_context()
     stats = {"attempted": 0, "sent": 0, "confirmed": 0, "verified_pairs": 0, "peak_sockets": 0}
-    recovery = {"disconnect_cycles": 0, "reconnections": 0, "retries": 0}
+    recovery = {"disconnect_cycles": 0, "reconnections": 0, "retries": 0, "expected_failures": 0}
     latencies: list[float] = []
     users: set[str] = set()
     opened = 0
@@ -227,12 +235,15 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
                 await barrier.wait()
                 await release.wait()
                 expected: dict[str, str] = {}
-                while time.monotonic() < start + duration:
+                needs_fresh_delivery = False
+                while time.monotonic() < start + duration or needs_fresh_delivery:
                     tick = time.monotonic()
                     identifier = str(uuid4())
                     clear = "N9 synthetic " + identifier
                     encrypted = encrypt_text(clear, pair.sender, pair.recipient.public_key)
                     recovering = profile == "stored-reconnect" and len(expected) % reconnect_every == 0
+                    disconnecting = (profile == "ephemeral-disconnect" and not needs_fresh_delivery
+                                     and len(expected) % reconnect_every == 0)
                     stats["attempted"] += 1
                     if recovering:
                         await close_socket(1)
@@ -264,6 +275,32 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
                             incoming["protocol_version"]), pair.recipient)
                         if decrypted != clear:
                             raise LoadFailure("PAYLOAD_CORRUPTED")
+                    if disconnecting:
+                        # Haber descifrado no equivale a confirmar: cerrar antes del ACK.
+                        await close_socket(1)
+                        recovery["disconnect_cycles"] += 1
+                        await received(sender, "message.failed", identifier, timeout,
+                                       failure_code="RECIPIENT_DISCONNECTED")
+                        state = await request(sender_api, "GET", f"/messages/{identifier}/status")
+                        if state["status"] != "failed":
+                            raise LoadFailure("FAILURE_STATE_MISMATCH")
+                        await asyncio.sleep(offline_seconds)
+                        recipient = await open_socket(1)
+                        retry = frame("message.send", pair.conversation, encrypted.payload(UUID(identifier)))
+                        await sender.send(json.dumps(retry))
+                        recovery["retries"] += 1
+                        await received(sender, "message.failed", identifier, timeout,
+                                       request_id=retry["request_id"], failure_code="DELIVERY_TIMEOUT")
+                        state = await request(sender_api, "GET", f"/messages/{identifier}/status")
+                        if state["status"] != "failed":
+                            raise LoadFailure("FAILURE_STATE_MISMATCH")
+                        await history(recipient_api, pair, {})
+                        recovery["expected_failures"] += 1
+                        # Un ID fallido no se recupera; exigir otra entrega con UUID nuevo,
+                        # incluso si durante el fallo se agotó la duración del escenario.
+                        needs_fresh_delivery = True
+                        await asyncio.sleep(max(0, min(start + duration, tick + interval) - time.monotonic()))
+                        continue
                     await recipient.send(json.dumps(frame("message.ack", pair.conversation, {"message_id": identifier})))
                     await received(sender, "message.delivered", identifier, timeout, settled=expected)
                     if recovering:
@@ -280,6 +317,7 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
                         raise LoadFailure("DELIVERY_STATE_MISMATCH")
                     expected[identifier] = clear
                     stats["confirmed"] += 1
+                    needs_fresh_delivery = False
                     await asyncio.sleep(max(0, min(start + duration, tick + interval) - time.monotonic()))
                 if not expected:
                     raise LoadFailure("PAIR_NO_TRAFFIC")
@@ -312,11 +350,16 @@ async def benchmark(base: str, pairs: list[Pair], *, expected_peak: int, duratio
     def percentile(value: float) -> float | None:
         return round(ordered[max(0, math.ceil(len(ordered) * value) - 1)] * 1000, 3) if ordered else None
     passed = (not errors and stats["peak_sockets"] == expected_peak * 2 and stats["verified_pairs"] == len(pairs)
-              and 0 < stats["attempted"] == stats["sent"] == stats["confirmed"])
+              and stats["confirmed"] > 0
+              and stats["attempted"] == stats["sent"] == stats["confirmed"] + recovery["expected_failures"])
     if profile == "stored-reconnect":
         passed = (passed and recovery["disconnect_cycles"] >= len(pairs)
                   and recovery["retries"] == recovery["reconnections"] == 2 * recovery["disconnect_cycles"])
-    return {"passed": passed, "profile": "online_closed_loop" if profile == "online" else "stored_reconnect_closed_loop",
+    if profile == "ephemeral-disconnect":
+        passed = (passed and recovery["disconnect_cycles"] >= len(pairs)
+                  and recovery["retries"] == recovery["reconnections"] == recovery["expected_failures"]
+                  == recovery["disconnect_cycles"])
+    return {"passed": passed, "profile": profile.replace("-", "_") + "_closed_loop",
             "expected_peak_users": expected_peak,
             "target_sockets": expected_peak * 2, "duration_seconds": duration, "interval_seconds": interval,
             "modes": {mode: sum(pair.mode == mode for pair in pairs) for mode in ("stored", "ephemeral")},
@@ -334,7 +377,7 @@ def main() -> int:
     parser.add_argument("--duration", type=float, required=True)
     parser.add_argument("--interval", type=float, required=True)
     parser.add_argument("--timeout", type=float, default=10)
-    parser.add_argument("--profile", choices=("online", "stored-reconnect"), default="online")
+    parser.add_argument("--profile", choices=("online", "stored-reconnect", "ephemeral-disconnect"), default="online")
     parser.add_argument("--reconnect-every", type=int, default=10)
     parser.add_argument("--offline-seconds", type=float, default=1)
     parser.add_argument("--ca-file", type=Path)

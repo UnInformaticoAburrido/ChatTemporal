@@ -79,6 +79,36 @@ def test_reconnect_profile_rejects_ephemeral_and_invalid_scenario_before_io() ->
         with pytest.raises(ValueError):
             asyncio.run(load_tool.benchmark("https://test.invalid", [pair], expected_peak=1,
                 duration=1, interval=1, profile="stored-reconnect", **options))
+    for pair, options in ((stored, {}), (ephemeral, {"reconnect_every": 0}),
+                          (ephemeral, {"offline_seconds": 0}), (ephemeral, {"offline_seconds": 11})):
+        with pytest.raises(ValueError):
+            asyncio.run(load_tool.benchmark("https://test.invalid", [pair], expected_peak=1,
+                duration=1, interval=1, profile="ephemeral-disconnect", **options))
+
+
+@pytest.mark.parametrize(("kind", "code", "wrong_id", "error"), [
+    ("message.failed", "RECIPIENT_DISCONNECTED", False, None),
+    ("message.failed", "OFFER_TIMEOUT", False, "UNEXPECTED_FAILURE"),
+    ("message.failed", "RECIPIENT_DISCONNECTED", True, "UNEXPECTED_MESSAGE"),
+    ("message.delivered", None, False, "UNEXPECTED_DELIVERY"),
+    ("system.error", None, False, "WS_REMOTE_ERROR"),
+])
+def test_expected_failure_requires_matching_id_and_reason(kind, code, wrong_id, error) -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    identifier = str(uuid4())
+    payload = {"message_id": str(uuid4()) if wrong_id else identifier, "code": code}
+    socket = AsyncMock()
+    socket.recv.return_value = json.dumps({"type": kind, "payload": payload})
+    async def run():
+        return await load_tool.received(socket, "message.failed", identifier, 1,
+                                        failure_code="RECIPIENT_DISCONNECTED")
+    if error:
+        with pytest.raises(load_tool.LoadFailure, match=error):
+            asyncio.run(run())
+    else:
+        assert asyncio.run(run()) == payload
 
 
 def test_retry_receipts_are_correlated_and_unknown_messages_are_rejected() -> None:
@@ -97,6 +127,23 @@ def test_retry_receipts_are_correlated_and_unknown_messages_are_rejected() -> No
     socket.recv.side_effect = [receipt(str(uuid4()), request)]
     with pytest.raises(load_tool.LoadFailure, match="UNEXPECTED_MESSAGE"):
         asyncio.run(load_tool.received(socket, "message.delivered", current, 1, settled={previous: "received"}))
+
+
+def test_failed_retry_requires_its_receipt_and_reconnected_receiver_rejects_replayed_payload() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    identifier, request = str(uuid4()), str(uuid4())
+    socket = AsyncMock()
+    socket.recv.side_effect = [json.dumps({"type": "message.failed", "request_id": rid,
+        "payload": {"message_id": identifier, "code": code}}) for rid, code in (
+            ("old", "RECIPIENT_DISCONNECTED"), (request, "DELIVERY_TIMEOUT"))]
+    result = asyncio.run(load_tool.received(socket, "message.failed", identifier, 1,
+                         request_id=request, failure_code="DELIVERY_TIMEOUT"))
+    assert result["code"] == "DELIVERY_TIMEOUT" and socket.recv.await_count == 2
+    socket.recv.side_effect = [json.dumps({"type": "message.new", "payload": {"message_id": identifier}})]
+    with pytest.raises(load_tool.LoadFailure, match="UNEXPECTED_MESSAGE"):
+        asyncio.run(load_tool.received(socket, "message.offer", str(uuid4()), 1))
 
 
 @pytest.mark.parametrize("status", [429, 503])

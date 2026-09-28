@@ -1,5 +1,25 @@
 # Validación de la entrega
 
+## Carga con desconexión efímera · 2026-09-28
+
+El commit anterior `e2bdebb` tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36410291565):
+157 pruebas unitarias y 93 de integración; cobertura global 91,18 % y auditorías
+de dependencias, secretos e imágenes correctas.
+
+Se añade `ephemeral-disconnect`: cierre del receptor tras descifrar y antes del
+ACK, fallo RECIPIENT_DISCONNECTED contrastado con REST, reconexión y rechazo del
+reenvío del mismo ID. Se exige después una entrega con UUID nuevo, incluso si la
+pausa superó la duración. Los fallos provocados se cuentan aparte de confirmaciones.
+
+Validación local: **16 pruebas de la herramienta y 6 de integración correctas**.
+PostgreSQL confirma ausencia de contenido persistido para entregas y fallos;
+Redis conserva los metadatos terminales sin payload. Se rechazan corrupción,
+códigos de fallo distintos, confirmaciones inesperadas y replay de payload tras
+reconectar. Evidencia de integración: `/tmp/chat-persistence-test.B4o3yp`.
+Ruff y diff correctos. CI repite los escenarios con las imágenes fijadas.
+Son cierres ordenados con dos sockets; staging, carga representativa, cortes
+abruptos e interfaz siguen pendientes para completar N9.
+
 ## Carga con reconexiones · 2026-09-28
 
 El commit anterior `d1f8bfd`, incluidas las protecciones de aislamiento del ensayo
