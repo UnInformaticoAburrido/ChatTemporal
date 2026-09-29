@@ -183,3 +183,12 @@ Ningún comentario afirma que el usuario aprobó una decisión que no respondió
 Las dudas de N5/N7 no bloquean esta base; deben resolverse al implementar esos
 contratos. Una respuesta que contradiga la especificación se registrará con la
 cita correspondiente y se descartará conforme a la instrucción del usuario.
+
+## Cliente web · 2026-09-29
+
+| Decisión | Aplicación |
+|---|---|
+| DEC-91 | Iniciar una web adaptable con HTML/CSS/módulos JS nativos, servida por Caddy en el mismo origen. Opción de trabajo reversible ante una preferencia de plataforma; no se atribuye aprobación explícita al usuario. Runtime sin dependencias de navegador ni servidor Node. |
+| DEC-92 | Primer incremento limitado a identidad. Tokens en memoria, sin persistir privadas ni generar claves nuevas: recargar/cerrar exige nuevo acceso. La UI explica esta limitación y distingue recuperación de identidad de descifrado. Persistencia segura y bindings libsodium se resolverán antes de la mensajería. |
+| DEC-93 | Refresh compartido por llamadas simultáneas, sin reintento automático si su resultado es incierto. Generación de sesión impide restaurar credenciales o revocar una sesión nueva por respuestas de peticiones antiguas. Registro y recuperación tampoco se reenvían automáticamente. |
+| DEC-94 | Playwright solo para pruebas, lock npm y auditoría CI. Escenarios de navegador con API interceptada se reportan separados de integración backend/Caddy con servicios reales. No se publican capturas ni traces con frases o tokens. |

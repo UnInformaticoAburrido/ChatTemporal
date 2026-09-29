@@ -1,12 +1,16 @@
 # N9 · Homologación y release
 
 Continuación de N8, actualizada 2026-09-28. Fuentes normativas: §§22, 29 y 31.
-**En curso; no autoriza un despliegue de producción.** La interfaz cliente,
+**En curso; no autoriza un despliegue de producción.** Completar la interfaz cliente,
 staging, proveedores reales y capacidad del host siguen siendo puertas pendientes.
 
 ## N9.1 · CI y cobertura
 
 `.github/workflows/quality.yml` ejecuta en push, pull_request y workflow_dispatch:
+
+- Cliente web: Node 24.21.0, lock npm auditado, pruebas de sesión y Chromium
+  escritorio/móvil con API interceptada. Caddy sirve los assets reales con
+  cabeceras verificadas por el smoke HTTPS. Ver [alcance y pendientes](CLIENTE_WEB.md).
 
 - Ruff sobre aplicación, pruebas y scripts; mypy estricto sobre los 52 módulos
   de aplicación/cliente; actionlint para el propio workflow.
@@ -152,7 +156,7 @@ Checklist §31 todavía pendiente de evidencia del despliegue:
   [runbooks N8](../operations/README.md).
 
 No se modifican protecciones de rama ni se declara `main` lista para producción.
-El administrador debe requerir ambos jobs de calidad antes del merge.
+El administrador debe requerir los tres jobs (`web`, `tests`, `security`) antes del merge.
 Evidencia y comandos reproducibles en [VALIDACION.md](VALIDACION.md).
 
 `python scripts/test_startup_containers.py` reutiliza las imágenes ya construidas

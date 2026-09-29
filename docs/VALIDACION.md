@@ -1,5 +1,24 @@
 # Validación de la entrega
 
+## Cliente web de identidad · 2026-09-29
+
+El backend de partida `2120e96` tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36427638875):
+163 unitarias, 95 integraciones y 91,21 % de cobertura global.
+
+Primer cliente web servido por Caddy: registro, presentación y confirmación de
+frase, verificación/reenvío, recuperación y cierre. Tokens solo en memoria,
+refresh único bajo concurrencia y sin reintentar resultados dudosos. No genera
+ni reemplaza claves de cifrado. Sesión perdida al recargar/cerrar, indicado en UI.
+
+Validación local: **11 pruebas de sesión/contratos y 10 recorridos de navegador**
+correctos (cinco escenarios en escritorio y móvil). Chromium con API interceptada
+y datos sintéticos; no equivalen a SMTP real ni E2E del chat completo. Capturas
+de la pantalla inicial inspeccionadas localmente, sin datos de cuentas.
+`npm audit` sin vulnerabilidades detectadas; Ruff, actionlint y Compose correctos.
+CI añade job web con versiones fijadas y amplía el smoke Caddy para exigir assets,
+CSP, no-store y rutas no públicas inaccesibles. Los siguientes bloques se detallan
+en [CLIENTE_WEB.md](CLIENTE_WEB.md); N9 sigue en curso.
+
 ## Carga con desconexión efímera · 2026-09-28
 
 El commit anterior `e2bdebb` tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36410291565):

@@ -24,6 +24,11 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 | N8 · Operación y seguridad | N0–N7 | Backups/restauración, métricas/alertas completas, logs 14 días, despliegue y rotación | Restauración, fallos, secretos/logs e imagen auditados | Implementado y probado localmente; imágenes auditadas y pruebas de contenedores en CI; pendientes validación del host y receptor SMTP real |
 | N9 · Homologación y release | N0–N8 | CI, integración/E2E, staging equivalente, carga y runbooks | Todos los criterios §22 y checklist §31 cumplidos | En curso: CI verde, cobertura, auditorías de imágenes, HTTPS/WSS y reinicios comprobados; E2E cliente, staging y carga pendientes |
 
+Actualización 2026-09-29: el [cliente web de identidad](CLIENTE_WEB.md) inicia
+el frontend final. Registro/verificación/recuperación disponibles; claves locales,
+conversaciones, mensajería, QR y Push en interfaz siguen pendientes. Las secciones
+«Continuación» inferiores conservan evidencia histórica de cada entrega.
+
 No se estiman fechas sin equipo, hardware ni pico esperado. Cada nivel se cierra
 con evidencia reproducible; la existencia de una carpeta o un test simulado no
 equivale a una funcionalidad completada.

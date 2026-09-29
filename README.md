@@ -8,10 +8,11 @@ N6 completa las votaciones y la conservación/eliminación automática de la gra
 N7 añade transferencia de claves, replay de historial y Web Push genérico.
 N8 añade copias cifradas, métricas/alertas, retención de logs y apagado controlado.
 N9 incorpora CI, umbrales de cobertura, auditorías y pruebas adicionales de seguridad.
-**El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
-de homologación de N9. CI ya valida las imágenes fijadas, cobertura, seguridad,
+**El MVP completo sigue pendiente**: el cliente web ya permite gestionar identidad;
+faltan claves locales, conversaciones y mensajería en la interfaz, además de N9.
+CI ya valida las imágenes fijadas, cobertura, seguridad,
 HTTPS/WSS y recuperación tras reiniciar PostgreSQL/Redis. N9 sigue en curso:
-quedan la interfaz, proveedores reales, carga y comprobaciones del host/staging.
+quedan completar el cliente, proveedores reales, carga y comprobaciones del host/staging.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -23,6 +24,7 @@ quedan la interfaz, proveedores reales, carga y comprobaciones del host/staging.
 - [N7 documentado por subapartados](docs/N7_RECUPERACION_PUSH.md)
 - [N8 documentado por subapartados](docs/N8_OPERACION_SEGURIDAD.md)
 - [N9: CI, cobertura y puertas pendientes de release](docs/N9_HOMOLOGACION_RELEASE.md)
+- [Cliente web: identidad y próximos bloques](docs/CLIENTE_WEB.md)
 - [Preparar carga online, reconexiones y fallos efímeros verificables](docs/CARGA.md)
 - [Runbooks de backup, alertas, logs y despliegue](operations/README.md)
 
@@ -34,6 +36,7 @@ docker-compose.local.yml        desarrollo: solo 127.0.0.1:18080 (configurable)
 docker-compose.production.yml   producción: logs journald y filtrado de dependencias
 docker-compose.test.yml         pruebas en un proyecto separado
 python/                        fuentes FastAPI, worker, dependencias y pruebas
+web/                           cliente de identidad y pruebas de navegador
 BD/postgresql/                 configuración y migraciones Alembic
 BD/redis/                      configuración sin persistencia y scripts
 caddy/                         proxy, TLS y rutas públicas
@@ -67,7 +70,8 @@ La preparación local no sobrescribe claves existentes. En este espacio de traba
 ya se ha ejecutado; puedes comenzar por `docker compose ... up`. SMTP local queda
 como proveedor pendiente: **el registro devuelve 503 y hace rollback hasta
 configurar un SMTP válido**. No se simulan envíos de correo en la aplicación.
-No existe una interfaz web de chat en esta entrega.
+Abrir `http://localhost:18080/` para el cliente web de identidad. La pantalla de
+conversaciones todavía no está implementada; ver [cliente web](docs/CLIENTE_WEB.md).
 
 Para construir las imágenes y arrancar por primera vez: `make up`.
 Una vez construidas, iniciar o volver a iniciar con:
@@ -130,7 +134,8 @@ procedimiento explícito de [operación](docs/OPERACION.md).
 ## Comprobaciones
 
 GitHub Actions ejecuta `.github/workflows/quality.yml` en cada push/PR: lint,
-tipos, unitarias, integración en contenedores, cobertura y auditorías. Exige 85 %
+tipos, unitarias, integración en contenedores, cobertura y auditorías. El job web
+prueba sesiones y recorridos de identidad en Chromium escritorio/móvil. Exige 85 %
 global y 90 % en cada dominio crítico (auth/invitations/delivery/voting). Los
 dominios y límites se detallan en [N9](docs/N9_HOMOLOGACION_RELEASE.md). El workflow
 no despliega y no sustituye las pruebas con el host, proveedores e interfaz reales.

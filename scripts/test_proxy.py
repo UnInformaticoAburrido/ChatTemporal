@@ -43,6 +43,17 @@ async def run() -> None:
         async with httpx.AsyncClient(base_url=ORIGIN, verify=tls, trust_env=False, timeout=10) as api:
             print("Proxy: salud y rutas privadas.", flush=True)
             assert (await api.get("/health/live")).status_code == 200
+            page = await api.get("/")
+            assert page.status_code == 200 and 'lang="es"' in page.text
+            assert page.headers["cache-control"] == "no-store"
+            assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
+            assert "'unsafe-inline'" not in page.headers["content-security-policy"]
+            assert page.headers["referrer-policy"] == "no-referrer"
+            for asset in ("/app.js", "/api.js", "/styles.css"):
+                response = await api.get(asset)
+                assert response.status_code == 200 and response.headers["x-content-type-options"] == "nosniff"
+            for private in ("/package.json", "/tests/api.test.mjs", "/.git/config", "/missing"):
+                assert (await api.get(private)).status_code == 404
             for path in ("/metrics", "/health/ready", "/docs", "/openapi.json"):
                 assert (await api.get(path)).status_code == 404
             assert (await api.get("/api/v1/users/me")).status_code == 401

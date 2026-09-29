@@ -12,5 +12,8 @@ secrets/*
 .coverage*
 htmlcov/
 artifacts/
+node_modules/
+web/test-results/
+web/playwright-report/
 backups/
 python/config/settings.local.toml

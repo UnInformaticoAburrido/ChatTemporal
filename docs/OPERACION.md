@@ -219,27 +219,23 @@ Los permisos de transferencia duran como máximo 24 h. Replay conserva solo
 metadatos Redis durante 15 min, ligados a conexiones; al reconectar empieza otro
 replay_id. No se guardan items de replay ni se amplía la retención normal del chat.
 
-`docker compose --profile observability up -d` activa Prometheus interno. Métricas
-actuales: readiness y edad de la última purga. Alertas iniciales: indisponibilidad
-y purga detenida. No se han configurado notificaciones ni métricas del host.
+`docker compose --profile observability up -d` activa Prometheus y los servicios
+internos de observabilidad. N8 ya implementa métricas REST/WS, dependencias,
+capacidad, purga y Push, además de alertas y filtrado de logs. El override de
+producción usa journald; instalar y verificar la retención temporal en el host
+según [el runbook vigente](../operations/README.md). No exponer métricas al público.
+La entrega SMTP de alertas y las métricas del host real siguen pendientes de staging.
 
-La rotación `local` de Docker limita tamaño, no tiempo. Retención14d y alertas
-completas deben implementarse y probarse en N8. No exponer Prometheus al público.
+## Backups y restauración
 
-## Backups y restauración: puerta pendiente de N8
+N8 implementa copias lógicas cifradas cada seis horas, retención de siete días y
+cuatro copias semanales, y ensayo mensual de restauración. Excluye mensajes,
+sesiones y otros datos TTL; incluye solo metadatos durables y esquema. Los timers
+existen en `operations/systemd/`, pero deben instalarse y verificarse en el host.
 
-No hay aún servicio de copias programadas. No habilitar producción de usuarios
-hasta contar con backup lógico cifrado y restauración ensayada. La política es:
-
-- Cada6h, snapshots frecuentes7d y4 snapshots semanales.
-- Incluir esquema/migraciones y datos de users, user_keys públicas, invitations,
-  conversations, conversation_members; Push solo con cifrado.
-- Excluir datos de messages, message_events, message_deliveries, auth_sessions,
-  auth_refresh_tokens, email_verification_tokens, votes, vote_ballots, vote_eligible_members,
-  transfer_upload_grants, push_jobs y push_job_deliveries. Un `pg_dump`
-  completo sin exclusiones o snapshot de volumen contradiría la retención.
-- Prueba mensual de restore aislado, RPO≤6h/RTO≤2h. Verificar tablas excluidas
-  vacías, metadatos durables presentes y reautenticación requerida.
+CI prueba restauración y exclusiones con datos sintéticos. Falta acreditar
+RPO≤6h/RTO≤2h y recuperación tras pérdida del host con volumen representativo.
+Procedimiento y restricciones: [runbook de operación](../operations/README.md).
 
 Nunca usar `docker compose down -v` para parar producción: elimina volúmenes.
 `docker compose down` conserva PostgreSQL y estado de certificados; Redis se

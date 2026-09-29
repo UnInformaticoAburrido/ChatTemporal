@@ -179,6 +179,7 @@ services:
     ports: ["80:8080", "443:8443"]
     volumes:
       - ./caddy:/etc/caddy:ro
+      - ./web/public:/srv/chat-web:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
