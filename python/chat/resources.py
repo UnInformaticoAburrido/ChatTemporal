@@ -26,9 +26,12 @@ def summary(row: ConversationRecord) -> ConversationSummary:
 class Resources:
     # DEC-52: exponer ahora las lecturas normativas permite comprobar el cursor
     # con permisos reales; crear/aceptar/cerrar y enviar siguen en N4/N5.
-    async def replace_key(self, principal: Principal, data: PublicKeyInput, *, rotate: bool = False) -> PublicKey:
+    async def replace_key(self, principal: Principal, data: PublicKeyInput, *, rotate: bool = False,
+                          only_if_absent: bool = False) -> PublicKey:
         async with transaction() as unit:
             await IdentityStore(unit.connection).authenticated(principal.user.id, principal.sid, lock=True)
+            if only_if_absent and await ResourceStore(unit.connection).key(principal.user.id, principal.user.id):
+                raise APIError("KEY_ALREADY_EXISTS", 412, "A public key already exists.")
             record = await ResourceStore(unit.connection).replace_key(
                 principal.user.id, data.public_key, data.protocol_version, rotate=rotate,
             )
@@ -53,6 +56,20 @@ class Resources:
             if record is None:
                 raise APIError("CONVERSATION_NOT_FOUND", 404, "Conversation not found.")
         return summary(record)
+
+    async def conversation_key(self, principal: Principal, conversation: UUID) -> PublicKey:
+        # La clave del interlocutor no revela su UUID ni nick durante pending.
+        async with transaction() as unit:
+            await IdentityStore(unit.connection).authenticated(principal.user.id, principal.sid)
+            row = await (await unit.connection.execute("""SELECT k.public_key,k.protocol_version,k.updated_at
+                FROM conversation_members me JOIN conversation_members peer
+                  ON peer.conversation_id=me.conversation_id AND peer.user_id<>me.user_id
+                JOIN user_keys k ON k.user_id=peer.user_id JOIN users u ON u.id=peer.user_id AND u.is_active
+                WHERE me.user_id=%s AND me.conversation_id=%s AND me.membership_status<>'left'
+                  AND peer.membership_status<>'left'""", (principal.user.id, conversation))).fetchone()
+            if row is None:
+                raise APIError("USER_NOT_FOUND", 404, "Conversation key unavailable.")
+            return PublicKey.model_validate(dict(zip(("public_key", "protocol_version", "updated_at"), row, strict=True)))
 
     async def conversations(self, principal: Principal, page: Pagination) -> Page[ConversationSummary]:
         before = decode_cursor(page.cursor, "conversations") if page.cursor is not None else None

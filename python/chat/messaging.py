@@ -1,7 +1,7 @@
 """N5: transacciones de envío/ACK y entrega efímera ligada a una conexión."""
 
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +15,7 @@ from chat.identity_redis import IdentityRedis
 from chat.identity_store import IdentityStore
 from chat.persistence import MessageIdConflict, MessageWrite, UnitOfWork, transaction
 from chat.protocol import decode_binary
+from chat.push import enqueue_push
 from chat.realtime_redis import Attempt, RealtimeRedis, publish
 from chat.resource_dto import MessageSend
 from chat.resource_store import ConversationRecord
@@ -98,6 +99,9 @@ class Messaging:
                                   str(peer[0]), str(message.request_id),
                                   time.time()+self.settings.ephemeral_offer_timeout_seconds)
                 await self.redis.create(attempt)
+                if not await self.redis.connections(attempt.recipient):
+                    await enqueue_push(unit, UUID(attempt.recipient), row.id, message.payload.message_id,
+                                       "message.offer", datetime.fromtimestamp(attempt.deadline, UTC))
         await publish(attempt.recipient, frame("message.offer", message.conversation_id,
                       {"message_id": attempt.message}, message.request_id))
 
@@ -165,6 +169,9 @@ class Messaging:
                 attempt.deadline = result.event.sent_at.timestamp()+self.settings.ephemeral_delivery_timeout_seconds
                 await self.redis.save(attempt)
             recipient = result.deliveries[0].recipient_user_id
+            if row.mode == "stored":
+                await enqueue_push(unit, recipient, row.id, identifier, "message.new",
+                                   result.event.sent_at + timedelta(days=1))
             event = frame("message.new", row.id, {"message_id": str(identifier), "sender_role": row.role,
                           "sent_at": utc_text(result.event.sent_at), "protocol_version": 1,
                           "ciphertext": message.payload.ciphertext, "crypto_meta": message.payload.crypto_meta},

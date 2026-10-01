@@ -1,18 +1,98 @@
 groups:
-  - name: chat-infrastructure
+  - name: chat
     rules:
       - alert: ChatNotReady
-        expr: chat_ready == 0 or up{job="chat"} == 0
+        expr: chat_ready == 0 or up{job="chat"} == 0 or absent(up{job="chat"})
         for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Chat no disponible durante más de 2 minutos"
+        labels: {severity: critical}
+        annotations: {summary: 'API no disponible durante dos minutos'}
+      - alert: ChatHTTPFailures
+        expr: sum(rate(chat_http_duration_seconds_count{endpoint!~"metrics|ready|live",status=~"5.."}[5m])) / clamp_min(sum(rate(chat_http_duration_seconds_count{endpoint!~"metrics|ready|live"}[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: high}
+        annotations: {summary: 'Más del 5% de peticiones REST fallan'}
+      - alert: ChatDependencyDown
+        expr: chat_dependency_up == 0
+        for: 30s
+        labels: {severity: critical}
+        annotations: {summary: 'PostgreSQL o Redis inaccesible'}
       - alert: ChatCleanupStalled
-        expr: chat_cleanup_age_seconds > 300
+        expr: chat_cleanup_age_seconds > 300 or chat_cleanup_lag_seconds > 300
         for: 1m
-        labels:
-          severity: high
-        annotations:
-          summary: "No se completó la limpieza en los últimos 5 minutos"
-      # DEC-12: reglas iniciales; notificaciones/exporters restantes son puerta N8.
+        labels: {severity: high}
+        annotations: {summary: 'Purga retrasada más de cinco minutos'}
+      - alert: ChatVoteStalled
+        expr: chat_vote_lag_seconds > 60
+        for: 1m
+        labels: {severity: high}
+        annotations: {summary: 'Resolución de votos detenida'}
+      - alert: ChatRedisWritesRejected
+        expr: increase(chat_redis_oom_errors_total[5m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: 'Redis ha rechazado escrituras por falta de memoria'}
+      - alert: ChatRefreshReuse
+        expr: sum(increase(chat_refresh_reuse_total[5m])) >= 3
+        labels: {severity: high}
+        annotations: {summary: 'Reutilización repetida de refresh; investigar posible compromiso'}
+      - alert: ChatPostgresCapacity
+        expr: chat_postgres_connections / chat_postgres_max_connections > 0.8
+        for: 5m
+        labels: {severity: high}
+        annotations: {summary: 'PostgreSQL próximo al límite de conexiones'}
+      - alert: ChatPushFailures
+        expr: sum(increase(chat_push_failures_total[5m])) >= 5
+        labels: {severity: high}
+        annotations: {summary: 'Fallos repetidos de Web Push'}
+      - alert: ChatWorkerDown
+        expr: up{job="worker"} == 0 or absent(up{job="worker"})
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Worker sin métricas'}
+      - alert: HostDiskUsage
+        expr: 1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes > 0.8
+        for: 5m
+        labels: {severity: high}
+        annotations: {summary: 'Disco por encima del 80%'}
+      - alert: HostDiskUsage
+        expr: 1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes > 0.9
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Disco por encima del 90%'}
+      - alert: HostMemoryUsage
+        expr: 1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes > 0.85
+        for: 10m
+        labels: {severity: high}
+        annotations: {summary: 'RAM del host por encima del 85% durante diez minutos'}
+      - alert: HostClockDrift
+        expr: abs(node_timex_offset_seconds) > 2 or node_timex_sync_status == 0
+        for: 1m
+        labels: {severity: high}
+        annotations: {summary: 'Reloj desincronizado o deriva superior a dos segundos'}
+      - alert: HostMetricsMissing
+        expr: up{job="host"} == 0 or absent(node_timex_offset_seconds) or node_scrape_collector_success{collector="timex"} == 0
+        for: 2m
+        labels: {severity: high}
+        annotations: {summary: 'Faltan métricas del host o de sincronización NTP'}
+      - alert: TLSCertificateExpiring
+        expr: probe_ssl_earliest_cert_expiry - time() < 14 * 86400
+        labels: {severity: high}
+        annotations: {summary: 'Certificado TLS caduca en menos de catorce días'}
+      - alert: TLSProbeFailed
+        expr: probe_success{job="tls"} == 0 or up{job="tls"} == 0
+        for: 2m
+        labels: {severity: high}
+        annotations: {summary: 'Fallo del sondeo HTTPS externo'}
+      - alert: BackupOverdue
+        expr: time() - chat_backup_last_success_seconds > 21600 or absent(chat_backup_last_success_seconds)
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Sin backup correcto en las últimas seis horas'}
+      - alert: RestoreDrillOverdue
+        expr: time() - chat_restore_drill_last_success_seconds > 32 * 86400 or absent(chat_restore_drill_last_success_seconds)
+        labels: {severity: high}
+        annotations: {summary: 'Falta ensayo mensual de restauración'}
+      - alert: AlertDeliveryFailed
+        expr: increase(alertmanager_notifications_failed_total[5m]) > 0 or up{job="alertmanager"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Falla el canal de alertas; comprobar por un canal independiente'}

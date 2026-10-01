@@ -42,6 +42,17 @@ class RealtimeRedis:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    async def connections(self, user: str) -> list[str]:
+        async with redis_connection() as redis:
+            candidates = await redis.smembers(f"user_connections:{user}")
+            result = []
+            for candidate in candidates:
+                assert isinstance(candidate, bytes)
+                raw = await redis.get(b"connection:" + candidate)
+                if raw and json.loads(raw)["user_id"] == user:
+                    result.append(candidate.decode())
+            return sorted(result)
+
     async def presence(self, user: UUID, sid: UUID, connection: UUID, *, renew: bool = False) -> None:
         async with redis_connection() as redis:
             key = f"connection:{connection}"

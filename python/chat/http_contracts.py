@@ -10,10 +10,12 @@ from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from chat.errors import APIError
+from chat.metrics import ERRORS
 from chat.protocol import invalid_json_constant, unique_json_object
 
 
 def error_response(request_id: str, status: int, code: str, message: str) -> JSONResponse:
+    ERRORS.labels(code).inc()
     return JSONResponse(status_code=status, content={"error": {
         "code": code, "message": message, "request_id": request_id, "details": {},
     }})

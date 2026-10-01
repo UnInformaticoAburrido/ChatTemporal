@@ -1,0 +1,19 @@
+[Unit]
+Description=Ensayo de restore Chat en base temporal
+After=docker.service chat-backup.service
+Requires=docker.service
+[Service]
+Type=oneshot
+User=chat-ops
+WorkingDirectory=/opt/chat
+EnvironmentFile=/etc/chat/backup.env
+ExecStart=/opt/chat/.venv/bin/python /opt/chat/operations/backup_job.py drill
+RuntimeDirectory=chat-backup
+RuntimeDirectoryMode=0700
+TimeoutStartSec=2h
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/chat/backups /opt/chat/artifacts/operations
+LimitCORE=0

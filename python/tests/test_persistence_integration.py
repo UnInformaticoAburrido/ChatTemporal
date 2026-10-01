@@ -313,8 +313,8 @@ def test_content_and_event_retention_are_independent(pair: tuple[UUID, UUID, UUI
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("staged", [None, "0001_reference", "0002_production", "0003_email_hash", "0004_vote_electorate", "0005_delivery_mode"],
-                         ids=["empty_to_head", "0001_to_head", "0002_to_head", "0003_to_head", "0004_to_head", "0005_to_head"])
+@pytest.mark.parametrize("staged", [None, "0001_reference", "0002_production", "0003_email_hash", "0004_vote_electorate", "0005_delivery_mode", "0006_ballot_electorate"],
+                         ids=["empty_to_head", "0001_to_head", "0002_to_head", "0003_to_head", "0004_to_head", "0005_to_head", "0006_to_head"])
 def test_real_migrations_in_disposable_database(staged: str | None, tmp_path: Path,
                                               monkeypatch: pytest.MonkeyPatch) -> None:
     original = read_secret("DATABASE_URL")
@@ -340,10 +340,10 @@ def test_real_migrations_in_disposable_database(staged: str | None, tmp_path: Pa
                 connection.execute("""INSERT INTO email_verification_tokens(user_id,token_hash,expires_at)
                     VALUES (%s,%s,now()+interval '30 minutes')""",
                                    (owner, bytes.fromhex("ab" * 32)
-                                    if staged in ("0003_email_hash", "0004_vote_electorate", "0005_delivery_mode") else "ab" * 32))
+                                    if staged not in ("0001_reference", "0002_production") else "ab" * 32))
         command.upgrade(config, "head")
         with psycopg.connect(dsn) as connection:
-            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0006_ballot_electorate",)
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0007_recovery_push",)
             if staged:
                 assert connection.execute("SELECT created_at=updated_at FROM conversations").fetchone() == (True,)
                 assert connection.execute("SELECT token_hash FROM email_verification_tokens").fetchone() == (bytes.fromhex("ab" * 32),)

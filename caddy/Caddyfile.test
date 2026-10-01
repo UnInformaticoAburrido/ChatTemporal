@@ -1,0 +1,11 @@
+# Exclusivo del proyecto chat-tests: CA interna, sin ACME ni dominio público.
+{
+	http_port 8080
+	admin 127.0.0.1:2019
+	import /etc/caddy/logging.caddy
+}
+
+https://caddy:8443 {
+	tls internal
+	import /etc/caddy/routes.caddy
+}

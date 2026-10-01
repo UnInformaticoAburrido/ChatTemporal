@@ -23,7 +23,7 @@ La especificación original y su SHA-256 se conservan en `docs/`. Los comentario
 | DUD-05 | §7/§25.6 detallan de forma diferente anonimato pending | §25.6: peer=null en ambos; clave host en redeem; aplicar N4 | No solicitada; regla específica |
 | DUD-06 | §15 elimina offer al ready, pero send posterior exige probar ese ready | Resuelto en N5: ready ligado a conexión receptora y deadline original; se elimina offer. Marcador sin ciphertext conserva modo/resultado, sin prolongar permiso (DEC-62/63) | Decisión de implementación, no aprobación inferida |
 | DUD-07 | §26.5 exige confirmar stored mediante estado, sin evento exacto de aceptación en §26.4 | Resuelto en N5 mediante GET /messages/{id}/status; no se añade message.accepted ni se confunde aceptación con ACK (DEC-61) | Se aplica el contrato REST explícito de §25.5/26.5 |
-| DUD-08 | MVP limita sesiones/dispositivos, pero transferencia requiere coexistencia | Concretar flujo de acceso al dispositivo nuevo y revocación del anterior antes de N7, sin introducir uso multidispositivo permanente | No solicitada; pendiente de aclaración |
+| DUD-08 | MVP limita sesiones/dispositivos, pero transferencia requiere coexistencia | Resuelta en N7: exchange mantiene una sola sesión normal y concede al predecesor permiso residual para PUT del blob a su sucesor, máximo 24 h; DELETE/reemplazo/expiración lo invalidan (DEC-76) | Decisión de implementación, sin atribuir aprobación al usuario |
 
 También se incorpora en 0002 el historial refresh (§24.3) y fingerprint (§28.2),
 ausentes del DDL inicial. No son funciones opcionales ni contradicciones: son
@@ -125,6 +125,40 @@ compatibilidad de esquema; todo mensaje nuevo debe incluirlo.
 | DEC-74 | Cierre y eliminación de messages.is_grace_message rechazados son atómicos. Se mantienen message_events/deliveries/fingerprints y contador de gracia para conservar estado e idempotencia. Un predicado de historial oculta gracia sin mayoría desde el deadline si el worker se retrasa; no se elimina contenido posterior ni se amplía retención del aprobado. Upgrade no copia payload efímero. |
 | DEC-75 | vote.opened/updated se preparan por destinatario con su propio my_vote y se publican tras commit. El worker procesa lotes de 1000 con transacciones independientes; fallo Pub/Sub no revierte resultados ni impide cerrar otros votos. REST puede devolver 503 después de commit; repetir elección o GET recupera el resultado. Sin outbox no se garantiza entrega/orden global: el cliente consulta GET tras cortes/deadline y no debe regresar de terminal a open por un aviso atrasado. |
 
+## Continuación N7 · 2026-09-23
+
+| ID | Decisión y motivo |
+|---|---|
+| DEC-76 | Exchange mantiene revocación de todas las sesiones anteriores y crea una única normal. transfer_upload_grants concede al último sid anterior un permiso residual exclusivo de PUT, ligado al nuevo sid y con plazo ≤24 h; se exige además que el access anterior siga siendo válido y que el sucesor no esté revocado/expirado. No habilita REST general, WS ni refresh. DELETE de transferencia borra el permiso; otro exchange lo sustituye, recover/logout del destino lo invalidan. No se cambian los DTO de autenticación normativos. |
+| DEC-77 | Transferencias en Redis: metadatos de propietario/sid destino/deadline separados del blob. Lua hace atómicas autorización, carga única y DELETE; PUT conserva TTL restante desde POST. GET sin blob devuelve 409 KEY_TRANSFER_NOT_READY; segunda carga 409 KEY_TRANSFER_CONFLICT; transferencia ajena 404, expirada/eliminada 410. No hay ciphertext en PostgreSQL ni secreto en peticiones/logs. |
+| DEC-78 | Cliente de referencia: XChaCha20-Poly1305 mediante libsodium, secreto CSPRNG de 32 bytes, nonce de 24 y AAD con versión/transfer_id; blob=nonce+ciphertext. Se valida QR estricto y se mantiene el secreto fuera del PUT. replay_history recifra textos locales con el protocolo crypto_box existente. Renderizar/escanear QR y reconstruir la vista local son tareas de la UI pendiente. |
+| DEC-79 | Replay requiere conversación active, sin voto bloqueante y ambos extremos conectados. Cada replay se vincula a conversación/emisor/conexión receptora; sequence inicia en 0 e item_count debe coincidir exactamente. Lua actualiza contador y publica atómicamente; solo retiene metadatos durante 15 min absolutos. Ciphertext pasa por Pub/Sub, nunca por messages/events/deliveries. Tras corte/expiración se usa UUID nuevo; no se promete replay durable ni ACK final. |
+| DEC-80 | Items replay tienen límite normativo de 100/s/replay y defensa adicional de 200/s/sid, evitando que el límite general WS 600/min impida la tasa prevista. Begin/end conservan cuota WS general. Exceso temporal devuelve RATE_LIMITED sin invalidar sequence ni cerrar por tres excesos de items. El tamaño máximo de frame y ciphertext se mantiene. |
+| DEC-81 | Suscripciones estrictas: HTTPS/443 sin credenciales/fragmento, p256dh P-256 válido de 65 bytes y auth_secret de 16, Base64URL canónico. Se rechazan destinos privados/locales. El envío comprueba todas las IP resueltas, fija una IP pública con TLS/SNI del hostname y no usa proxies ni sigue redirects; evita acceder a servicios internos mediante endpoints aportados por el usuario. |
+| DEC-82 | Upsert por endpoint solo del propietario; ajeno devuelve 409. Se añade session_id a la suscripción; solo envía mientras su sesión siga vigente. Tras exchange/recover el cliente nuevo registra su suscripción y el anterior deja de recibir Push. Suscripciones históricas sin sid requieren registrar de nuevo; no se les asigna una sesión inventada. |
+| DEC-83 | Push stored se encola en la misma transacción del mensaje, solo cuando es nuevo; ephemeral encola al crear un offer offline. Cola solo con UUID/event_type, plazos y reintentos, sin ciphertext. Conserva deduplicación hasta su TTL: 24 h stored y deadline del offer ephemeral. El worker revalida pertenencia/sesión/oferta, usa SKIP LOCKED y registra envíos por suscripción. Hasta cinco intentos con espera exponencial; 404/410 revocan. Una caída entre envío y commit puede duplicar un aviso: no se promete exactly-once. |
+| DEC-84 | Web Push usa RFC 8291/8292 sobre cryptography y PyJWT ya fijados: ECDH P-256 efímero, HKDF-SHA256, AES-128-GCM y VAPID ES256 con expiración de una hora. Solo cifra payload genérico permitido. Se verifica el vector RFC y un receptor HTTPS local independiente con verificación VAPID/descifrado; no se atribuye a un proveedor/browser real. |
+| DEC-85 | El worker procesa Push en una tarea separada de purga/votos/reconciliación, con lotes de 50 trabajos y timeouts de socket de 5 s. La migración 0007 añade permisos de transferencia, sesión de suscripción y cola/recibos de Push. Permisos vencidos y trabajos expirados se purgan; la cola temporal y sus recibos se excluyen de backups durables. No hay dependencias nuevas. |
+
+## Continuación N8 · Operación y seguridad
+
+| Decisión | Aplicación |
+|---|---|
+| DEC-86 | Backup lógico de snapshot único por lista positiva de datos durables; esquema completo y extensiones citext/pgcrypto. Se excluyen también suscripciones Push por depender de sesiones excluidas. AES-256-GCM con cabecera autenticada, nonce aleatorio y clave independiente de 32 bytes. Restaurar exige tag válido y base vacía; no se usa clean ni se respalda Redis. |
+| DEC-87 | Timers del host cada seis horas y ensayo mensual en base temporal con UUID. Retención de siete días y última copia de las cuatro semanas ISO más recientes con copias. Los servicios oneshot se limitan con TimeoutStartSec, no RuntimeMaxSec. Textfile publica solo tiempos numéricos; las copias y claves quedan fuera de Git. |
+| DEC-88 | Métricas por proceso con etiquetas controladas; API y worker se scrapean por separado. Se mide ocupación PostgreSQL real, sin afirmar que exista pool. Prometheus, Alertmanager y exporters permanecen internos. Receptor HTTP local prueba firing/resolved; SMTP del operador y alertas del host requieren homologación N9. |
+| DEC-89 | Producción usa override journald y política temporal del host de catorce días con vacuum horario, sujeta al límite de disco. PostgreSQL/Redis descartan el texto arbitrario de los logs para evitar contenido SQL sensible; se conserva el estado del hijo al reenviar TERM/INT. Caddy elimina datos de request y mensajes de error sin filtrar. Se acepta menor detalle diagnóstico. |
+| DEC-90 | El servidor inicia drain desde el handler de SIGTERM, bloquea readiness/tickets/nuevos sockets y permite hasta quince segundos para ACK y ready/send de ofertas existentes. Después cierra con 1001. Las pruebas aceleran el plazo usando el mismo handler; SIGKILL no garantiza entrega. No cambia la revisión Alembic 0007. |
+
+Detalles y límites en [N8_OPERACION_SEGURIDAD.md](N8_OPERACION_SEGURIDAD.md) y
+[runbooks de operación](../operations/README.md). El cliente PostgreSQL para las
+pruebas de restore procede de la misma imagen fijada de Compose, usando la
+[estructura de la imagen oficial](https://github.com/docker-library/postgres/blob/master/17/bookworm/Dockerfile).
+
+Fuentes de DEC-84: [cifrado Web Push, RFC 8291](https://www.rfc-editor.org/rfc/rfc8291.html)
+y [autenticación VAPID, RFC 8292](https://www.rfc-editor.org/rfc/rfc8292.html).
+El vector de prueba es público y no contiene credenciales de usuarios.
+
 Fuentes técnicas de DEC-47/50: [PyNaCl, cifrado de clave pública](https://pynacl.readthedocs.io/en/latest/public/)
 y [bindings crypto_box de PyNaCl](https://github.com/pyca/pynacl/blob/main/src/nacl/bindings/crypto_box.py).
 El algoritmo y los formatos proceden de §5; la biblioteca solo los implementa.
@@ -149,3 +183,21 @@ Ningún comentario afirma que el usuario aprobó una decisión que no respondió
 Las dudas de N5/N7 no bloquean esta base; deben resolverse al implementar esos
 contratos. Una respuesta que contradiga la especificación se registrará con la
 cita correspondiente y se descartará conforme a la instrucción del usuario.
+
+## Cliente web · 2026-09-29
+
+| Decisión | Aplicación |
+|---|---|
+| DEC-91 | Iniciar una web adaptable con HTML/CSS/módulos JS nativos, servida por Caddy en el mismo origen. Opción de trabajo reversible ante una preferencia de plataforma; no se atribuye aprobación explícita al usuario. Runtime sin dependencias de navegador ni servidor Node. |
+| DEC-92 | Primer incremento limitado a identidad. Tokens en memoria, sin persistir privadas ni generar claves nuevas: recargar/cerrar exige nuevo acceso. La UI explica esta limitación y distingue recuperación de identidad de descifrado. Persistencia segura y bindings libsodium se resolverán antes de la mensajería. |
+| DEC-93 | Refresh compartido por llamadas simultáneas, sin reintento automático si su resultado es incierto. Generación de sesión impide restaurar credenciales o revocar una sesión nueva por respuestas de peticiones antiguas. Registro y recuperación tampoco se reenvían automáticamente. |
+| DEC-94 | Playwright solo para pruebas, lock npm y auditoría CI. Escenarios de navegador con API interceptada se reportan separados de integración backend/Caddy con servicios reales. No se publican capturas ni traces con frases o tokens. |
+
+## Claves web · 2026-10-01
+
+| Decisión | Aplicación |
+|---|---|
+| DEC-95 | Custodia inicial por archivo cifrado portable, con contraseña independiente; privadas desbloqueadas solo en memoria. Sin escritura automática en storage del navegador. Antes de publicar una pública inicial, volver a abrir su copia y comprobarla. La limpieza de buffers no garantiza borrado físico del navegador/SO. |
+| DEC-96 | Copia local v1: AES-256-GCM, PBKDF2-HMAC-SHA256/600000, salt16/nonce12 aleatorios; cabecera canónica autenticada y vinculada a user_id/pública. Tamaño, parámetros y campos acotados antes de derivar. No sustituye el formato QR de N7. |
+| DEC-97 | PUT de pública admite If-None-Match: * con comprobación bajo lock de usuario; existente=412, otras precondiciones=400. Preservar PUT sin cabecera/rotate normativos. El cliente no rota: compara la copia con la pública y consulta tras respuestas dudosas. |
+| DEC-98 | libsodium-wrappers 0.8.4, bundle local generado por esbuild 0.28.2 y comprobado byte a byte en CI desde el lock. CSP habilita solo wasm-unsafe-eval; interop crypto_box real con Python. Detalles y fuentes en CLAVES_CLIENTE.md. |

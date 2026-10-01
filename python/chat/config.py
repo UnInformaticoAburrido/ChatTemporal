@@ -35,6 +35,7 @@ class RateLimits(BaseModel):
     messages_user: RateRule = RateRule(limit=120, seconds=60, burst=20)
     ws_frames: RateRule = RateRule(limit=600, seconds=60, burst=100)
     replay: RateRule = RateRule(limit=100, seconds=1)
+    replay_session: RateRule = RateRule(limit=200, seconds=1)
 
 
 class Settings(BaseModel):

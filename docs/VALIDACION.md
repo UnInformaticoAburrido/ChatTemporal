@@ -1,5 +1,336 @@
 # Validación de la entrega
 
+## Claves del cliente web · 2026-10-01
+
+Base `9ae0d6c`: [CI completa verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36598209657),
+279 pruebas entre backend y web; cobertura Python 91,21 %.
+
+Se añade generación X25519 local, copia cifrada portable, apertura obligatoria
+antes de publicar y comprobación de coincidencia con la pública autoritativa.
+Publicación inicial con If-None-Match: * bajo lock de usuario; existente=412.
+El cliente no sustituye ni rota claves existentes.
+
+Validación local: 17 pruebas Node de sesiones/criptografía, 18 recorridos Chromium
+en escritorio/móvil y 5 integraciones de recursos con PostgreSQL/Redis reales.
+La carrera entre cuatro publicaciones produce una creación y tres rechazos,
+sin modificar la ganadora; evidencia `/tmp/chat-persistence-test.LqjAdv`.
+Interop crypto_box con Python en ambos sentidos, contraseñas erróneas, alteración
+de cabecera/ciphertext, formatos abusivos y bloqueo durante derivación verificados.
+UI con API interceptada: descarga/restauración reales, conflicto y respuesta perdida;
+no equivale a E2E completo con SMTP. Npm audit, Ruff, mypy y actionlint correctos;
+CI añade interop y comparación exacta del bundle con el lock.
+Alcance y siguientes tareas en [CLAVES_CLIENTE.md](CLAVES_CLIENTE.md).
+
+## Cliente web de identidad · 2026-09-29
+
+El backend de partida `2120e96` tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36427638875):
+163 unitarias, 95 integraciones y 91,21 % de cobertura global.
+
+Primer cliente web servido por Caddy: registro, presentación y confirmación de
+frase, verificación/reenvío, recuperación y cierre. Tokens solo en memoria,
+refresh único bajo concurrencia y sin reintentar resultados dudosos. No genera
+ni reemplaza claves de cifrado. Sesión perdida al recargar/cerrar, indicado en UI.
+
+Validación local: **11 pruebas de sesión/contratos y 10 recorridos de navegador**
+correctos (cinco escenarios en escritorio y móvil). Chromium con API interceptada
+y datos sintéticos; no equivalen a SMTP real ni E2E del chat completo. Capturas
+de la pantalla inicial inspeccionadas localmente, sin datos de cuentas.
+`npm audit` sin vulnerabilidades detectadas; Ruff, actionlint y Compose correctos.
+CI añade job web con versiones fijadas y amplía el smoke Caddy para exigir assets,
+CSP, no-store y rutas no públicas inaccesibles. Los siguientes bloques se detallan
+en [CLIENTE_WEB.md](CLIENTE_WEB.md); N9 sigue en curso.
+
+## Carga con desconexión efímera · 2026-09-28
+
+El commit anterior `e2bdebb` tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36410291565):
+157 pruebas unitarias y 93 de integración; cobertura global 91,18 % y auditorías
+de dependencias, secretos e imágenes correctas.
+
+Se añade `ephemeral-disconnect`: cierre del receptor tras descifrar y antes del
+ACK, fallo RECIPIENT_DISCONNECTED contrastado con REST, reconexión y rechazo del
+reenvío del mismo ID. Se exige después una entrega con UUID nuevo, incluso si la
+pausa superó la duración. Los fallos provocados se cuentan aparte de confirmaciones.
+
+Validación local: **16 pruebas de la herramienta y 6 de integración correctas**.
+PostgreSQL confirma ausencia de contenido persistido para entregas y fallos;
+Redis conserva los metadatos terminales sin payload. Se rechazan corrupción,
+códigos de fallo distintos, confirmaciones inesperadas y replay de payload tras
+reconectar. Evidencia de integración: `/tmp/chat-persistence-test.B4o3yp`.
+Ruff y diff correctos. CI repite los escenarios con las imágenes fijadas.
+Son cierres ordenados con dos sockets; staging, carga representativa, cortes
+abruptos e interfaz siguen pendientes para completar N9.
+
+## Carga con reconexiones · 2026-09-28
+
+El commit anterior `d1f8bfd`, incluidas las protecciones de aislamiento del ensayo
+de arranque, tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36341982999).
+
+Se añade el perfil `stored-reconnect` al generador de carga: receptor offline,
+confirmación REST de persistencia pending, reconexión con tickets nuevos,
+reenvíos del mismo ID/payload antes y después del ACK y recuperación/descifrado
+del historial. Comprueba un único registro por mensaje y correlaciona el recibo
+del último reenvío por request_id. Los recibos repetidos no suman entregas.
+
+Validación local: **10 pruebas de la herramienta y 4 de integración correctas**,
+con PostgreSQL/Redis temporales y sockets reales. Incluye los perfiles online
+stored/ephemeral, reconexión stored y rechazo de contenido corrupto antes del ACK
+(la entrega permanece pending). No se ocultan 429/503 ni IDs desconocidos.
+Evidencia: `/tmp/chat-persistence-test.4tFFlV`; Ruff/actionlint/diff correctos.
+CI repite estos escenarios con las imágenes fijadas. La prueba local no acredita
+capacidad: pico, hardware, duración sostenida y staging siguen pendientes.
+
+## Puertas de arranque · 2026-09-27
+
+Se añade `test_startup_gates_integration.py`: una migración crea una tabla y luego
+falla con un error SQL; la tabla se revierte y la versión Alembic permanece en
+`0007_recovery_push`. Los procesos reales de bootstrap de API/worker terminan
+con exit 1 ante esa revisión pendiente y no imprimen el dato del error.
+**La nueva prueba pasa localmente** con PostgreSQL/Redis temporales, en cinco
+segundos; evidencia: `/tmp/chat-persistence-test.SEWi6e`. Ruff, actionlint,
+configuración Compose combinada y `git diff --check` correctos.
+Otras nueve pruebas unitarias verifican que el ensayo solo acepte las direcciones
+internas de Compose y rechace DSN externos, puertos distintos y host sobrescrito
+por parámetros, antes de ejecutar una migración.
+
+CI añade el ensayo `scripts/test_startup_containers.py` con las imágenes fijadas,
+en un proyecto aleatorio aislado: bloqueo de dependencias por migración fallida,
+arranque directo que rechaza el esquema pendiente, espera sin puertos abiertos
+y recuperación sin otro reinicio al volver PostgreSQL/Redis. Conserva únicamente
+el resumen `startup-gates.json` y elimina sus volúmenes temporales. El reinicio
+completo del daemon o del host se reserva para staging. Comprobar el resultado
+de este paso en el SHA publicado antes de homologar la entrega.
+
+**Ensayo de contenedores superado** en `afa5dd5`:
+[CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36341591729).
+El informe acredita rollback, bloqueo por migración fallida, rechazo del esquema
+pendiente con arranque directo y recuperación de los mismos procesos al volver
+las dependencias. El job de seguridad también pasa.
+
+## Continuación N9 · verificada 2026-09-27
+
+CI de GitHub completa en verde para `1e1478aba35edacfd59c33b03b106f115a575a43`:
+[ejecución y artifacts](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36142194455).
+Python 3.13.15, PostgreSQL 17.11 y Redis 8.6.6 en las imágenes fijadas del repositorio.
+**136 unitarias y 90 pruebas de integración**; Ruff, mypy, actionlint y reglas
+Prometheus correctos. Alertmanager 0.34.1 entrega y resuelve alertas HTTP locales.
+
+| Ámbito | Líneas cubiertas/totales | Cobertura | Mínimo |
+|---|---:|---:|---:|
+| Global | 3174/3481 | 91,18 % | 85 % |
+| Auth | 542/569 | 95,25 % | 90 % |
+| Invitations | 302/308 | 98,05 % | 90 % |
+| Delivery | 813/880 | 92,39 % | 90 % |
+| Voting | 143/150 | 95,33 % | 90 % |
+
+La cobertura se combina entre unitarias e integración; los ensayos externos
+contra API/worker no aumentan ese numerador. Las diferencias frente al informe
+local anterior corresponden a los intérpretes usados (3.13 en CI, 3.14 local).
+
+Evidencia adicional en los artifacts de esa ejecución:
+
+- `lifecycle.json`: parada y arranque reales de PostgreSQL/Redis; cambia el
+  identificador de ambos procesos, PostgreSQL conserva el dato sintético y Redis
+  pierde una clave sin TTL. Liveness sigue en 200, readiness pasa a 503 durante
+  la caída y API/worker se recuperan sin reiniciarlos.
+- `proxy-smoke.json`: TLS con CA interna verificada, redirección HTTP, rutas
+  privadas ocultas, CORS, invitaciones/aceptación y ventana de voto real de 30 s.
+  Mensajería cifrada WSS en stored/ephemeral: cuatro sockets, siete mensajes
+  enviados/confirmados y dos historiales verificados. Es un ensayo funcional;
+  no demuestra capacidad para el pico de producción.
+- Nueve imágenes, incluida observabilidad: **cero vulnerabilidades críticas
+  detectadas**. Pip-audit y escaneos de secretos del código/imágenes correctos.
+  Se recompilan gosu y blackbox con Go corregido; no se excluyen CVE.
+
+No se ha desplegado ni modificado ningún volumen del usuario. La migración de
+PostgreSQL Debian a Alpine requiere el procedimiento y revisión de collations
+indicados en [operación](../operations/README.md#5-despliegue-red-y-apagado).
+Siguen pendientes interfaz cliente, SMTP/Push reales, staging, configuración del
+host (journald/firewall/NTP), capacidad ≥2× del pico definido por el operador y
+recuperación con volumen representativo. N9 permanece **en curso**.
+
+Validación posterior del filtro de logs: CI completa en verde para `21c1358`
+([ejecución](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36339011782)).
+**143 unitarias y 90 de integración**. El Compose de pruebas usa los mismos
+wrappers/volúmenes de logs que producción, con comprobación contra deriva de
+configuración. Se fuerza un error SQL con contenido sintético y se verifica que
+los logs de ambas dependencias solo tengan timestamp, level, service y event_type.
+`dependency-logs-check.json` publica únicamente resultado y conteos. Los logs
+originales no se suben. Las ocho pruebas locales del verificador incluyen rechazo
+de claves JSON duplicadas y diagnóstico de fallos sin repetir datos de entrada.
+
+## Continuación N9 · 2026-09-24
+
+Se mantiene la suite N8 (116 unitarias + 88 de integración) y se añaden catorce
+pruebas unitarias de puertas de cobertura, arranque y fuzzing: **130 unitarias y
+88 de integración**. Se repite el flujo WS real modificado para verificar logs
+sin tokens/ciphertext/crypto_meta/texto/privada. Servicios locales: los mismos
+Python 3.14.4/PostgreSQL 18.6/Redis 8.0.5 documentados en N8.
+Evidencia de integración completa: `/tmp/chat-persistence-test.Th18S3`; flujo WS
+con comprobación de logs: `/tmp/chat-persistence-test.dsGGRs`.
+
+Coverage.py 7.10.7 mide todos los módulos `chat`/`chat_client`, sin omisiones:
+
+| Ámbito | Líneas cubiertas/totales | Cobertura | Mínimo |
+|---|---:|---:|---:|
+| Global | 2973/3280 | 90,64 % | 85 % |
+| Auth | 510/537 | 94,97 % | 90 % |
+| Invitations | 278/284 | 97,89 % | 90 % |
+| Delivery | 745/812 | 91,75 % | 90 % |
+| Voting | 142/149 | 95,30 % | 90 % |
+
+Ruff, mypy (52 módulos), actionlint 1.7.12, sintaxis shell y Compose de tests
+correctos. Trivy 0.74.0 no detecta secretos en el árbol de código local (excluidos
+`.git`, `.venv`, `secrets` y `artifacts`, que no forman parte del código a publicar).
+La auditoría inicial reportó doce entradas de seis avisos únicos para pip 25.1.1;
+tras fijar pip 26.2.0, pip-audit no detecta vulnerabilidades conocidas en los locks.
+Informes locales: `artifacts/n9/coverage.json`, `pip-audit.json` y `secrets-local.json`.
+
+Se corrige la infraestructura de tests: `requirements-client.lock` entra en el
+contexto Docker; el repositorio se monta read-only en `/workspace` para fixtures;
+los informes tienen montaje separado escribible; el worker arranca después de
+las pruebas para no competir con migraciones/expiraciones forzadas. El runner
+siempre ejecuta down del proyecto `chat-tests`, conservando sus volúmenes.
+
+Para reproducir cobertura local, desde `python/`: `python -m coverage run -m
+pytest -q -m 'not integration'`. Después ejecutar el runner local documentado en
+N8 con `CHAT_TEST_COVERAGE=1` para añadir integración, y desde `python/`:
+
+```sh
+../.venv/bin/python -m coverage json -o ../artifacts/n9/coverage.json
+../.venv/bin/python ../scripts/check_coverage.py ../artifacts/n9/coverage.json
+```
+
+CI usa Python 3.13.12 y las imágenes fijadas de Compose. Su resultado remoto y
+el escaneo de imágenes deben comprobarse en el SHA publicado; la validación
+local no los sustituye. No hay acceso local al daemon Docker. Staging, SMTP/Push,
+HTTPS/WSS, journald, firewall, carga y UI E2E siguen pendientes; ver
+[N9_HOMOLOGACION_RELEASE.md](N9_HOMOLOGACION_RELEASE.md).
+
+## Continuación N8 · 2026-09-24
+
+Resultado: **116 pruebas unitarias y 88 de integración correctas (204 total)**.
+La suite completa inicial pasó con 115 unitarias/88 de integración; después de
+corregir el estado de salida del wrapper se añadieron y ejecutaron sus pruebas
+de regresión, con las ocho pruebas de operación correctas. Ruff correcto con
+`python/pyproject.toml`, incluidos los scripts nuevos; mypy estricto sin errores
+en 52 módulos. Persisten las advertencias de deprecación documentadas en N7.
+
+Se reutilizaron `.venv` y `artifacts/n7/runtime`: Python 3.14.4, PostgreSQL 18.6
+y Redis 8.0.5, datos sintéticos en sockets privados y WS loopback. Evidencia:
+`/tmp/chat-persistence-test.ymnDRv`; los servicios se detuvieron al terminar.
+El sandbox bloquea sockets locales, por lo que las ejecuciones válidas de pytest
+y Alertmanager se hicieron fuera de él. No se usaron las bases del proyecto.
+
+Comprobaciones nuevas:
+
+- Backup cifrado por streaming, retención 7 días/4 semanas y modo 0600; un fallo
+  no publica archivos parciales ni elimina copias previas.
+- Restauración real de esquema/datos durables y Alembic, con tablas TTL actuales
+  y futuras vacías. Copia alterada rechazada antes de SQL; destino ocupado rechazado.
+- Métricas de dependencias con servicios reales y etiquetas sin path/query secretos.
+- SIGTERM real en el handler: readiness y nuevos tickets 503; stored ACK y
+  ephemeral ready/send/ACK en vuelo completan y los sockets cierran con 1001.
+- Logs de dependencias descartan el texto completo, conservan exit 7 ante fallo
+  y exit 0 tras un cierre limpio por TERM. Se corrigió el estado del wait interrumpido.
+- Compose local, producción/observability y tests válidos estructuralmente;
+  override journald sin opciones de rotación por tamaño, sin puertos internos publicados.
+- `promtool` 3.5.0: pruebas de reglas correctas; `amtool` 0.28.1: configuración
+  aceptada; Alertmanager 0.28.1 real entrega firing y resolved a HTTP loopback.
+- Servicios systemd corregidos a `TimeoutStartSec=2h`: RuntimeMaxSec no limita
+  servicios oneshot. La instalación y ejecución en el host siguen pendientes.
+
+Reproducción con herramientas locales ya preparadas:
+
+```bash
+cd python
+../.venv/bin/python -m pytest -q -m 'not integration'
+../.venv/bin/ruff check .
+../.venv/bin/mypy chat chat_client
+cd ..
+.venv/bin/ruff check --config python/pyproject.toml operations scripts/test_alert_delivery.py
+LD_LIBRARY_PATH="$PWD/artifacts/n7/runtime/usr/lib/x86_64-linux-gnu" \
+CHAT_TEST_PG_BIN="$PWD/artifacts/n7/runtime/usr/lib/postgresql/18/bin" \
+CHAT_TEST_REDIS_SERVER="$PWD/artifacts/n7/runtime/usr/bin/redis-server" \
+CHAT_TEST_PYTHON="$PWD/.venv/bin/python" sh scripts/test_local_services.sh
+artifacts/n8/tools/prometheus-3.5.0.linux-amd64/promtool test rules prometheus/alerts.test.yml
+artifacts/n8/tools/alertmanager-0.28.1.linux-amd64/amtool check-config operations/alertmanager.yml
+.venv/bin/python scripts/test_alert_delivery.py artifacts/n8/tools/alertmanager-0.28.1.linux-amd64/alertmanager
+docker compose -f docker-compose.yml -f docker-compose.production.yml --profile observability config --quiet
+git diff --check
+```
+
+Límites: Docker deniega acceso al socket del daemon, también fuera del sandbox.
+No se construyó la imagen de tests actualizada con cliente PostgreSQL 17 ni se
+ejecutaron las imágenes exactas de Compose. No se instalaron unidades del host,
+se cambió el firewall ni se enviaron correos externos. Faltan comprobaciones reales
+de SMTP, journald, NTP/TLS, recuperación a escala, auditorías de imágenes/dependencias,
+CI/cobertura, carga y staging N9. La interfaz cliente permanece pendiente.
+
+## Continuación N7 · 2026-09-23
+
+Resultado final: **108 pruebas unitarias y 84 de integración correctas (192 total)**.
+Ruff y `git diff --check` correctos; mypy estricto sin errores en 50 módulos.
+No hay nuevas dependencias. Persisten las advertencias de deprecación de
+Starlette/httpx/AnyIO y Uvicorn/websockets ya registradas; no se ocultan.
+
+Servicios reales aislados: Python 3.14.4, PostgreSQL 18.6 y Redis 8.0.5. El entorno
+de `/tmp` desapareció durante la continuación; se reconstruyó en `.venv` y
+`artifacts/n7/runtime` con los locks existentes y paquetes extraídos, sin instalar
+servicios del sistema. PostgreSQL/Redis usan sockets Unix privados, WS usa puertos
+loopback y Push un servidor HTTPS local con certificado verificado. Los servicios
+se detienen al terminar. Evidencia del último runner: `/tmp/chat-persistence-test.Xs63k7`.
+Resúmenes de pruebas conservados en `artifacts/n7/unit.log` e `integration.log`,
+ignorados por Git. Evidencia por apartado en [N7_RECUPERACION_PUSH.md](N7_RECUPERACION_PUSH.md).
+
+Comprobaciones nuevas:
+
+- Transferencia entre dispositivos usando bootstrap/exchange real, una sola sesión
+  normal y permiso residual del anterior limitado a PUT para su sucesor. Se prueban
+  bloqueo de REST/WS/POST, caducidad, otro login, DELETE y logout del destino.
+- Blob máximo de 65536 bytes, 413 por exceso, carga concurrente única, campos
+  estrictos, propietario/sid, GET repetido, TTL no renovado y eliminación inmediata.
+  El secreto QR no forma parte del PUT ni del repr; ciphertext alterado y UUID/QR
+  incompatibles no se descifran.
+- Cliente que recifra historial local para una clave nueva, preservando orden y
+  metadatos opcionales. Frames compatibles con el parser; descifrado real en cliente.
+- Replay en dos instancias ASGI: begin/item/end, sequence e item_count exactos,
+  finalización, conexiones vinculadas, receptor offline, rechazo de terceros y
+  límite por replay. No se crean eventos/mensajes/deliveries normales ni jobs Push;
+  Redis conserva solo metadata del replay con TTL.
+- Suscripciones Push: upsert propio, conflicto de endpoint ajeno, revocación,
+  claves inválidas y destinos locales/privados rechazados. DNS mixto público/privado
+  falla cerrado. No se notifica a una suscripción de sesión sustituida.
+- Stored offline genera cola al aceptar el mensaje; retry no duplica jobs. Recibos
+  por suscripción evitan repetir éxitos al reintentar fallos. 404/410 revocan.
+  Ephemeral crea Push solo para offers offline; no se crea message_event por offer.
+- Vector conocido RFC 8291 exacto y petición HTTPS real a receptor local: TLS/SNI,
+  VAPID ES256, payload genérico cifrado y descifrado independiente con HMAC/AES-GCM.
+  Las IP públicas se enrutan a loopback exclusivamente dentro del test; producción
+  mantiene la validación de destinos y certificados.
+- Migraciones desde cero y desde cada revisión 0001–0006 hasta 0007_recovery_push.
+  Se conserva la suite previa de identidad, mensajería, votaciones y retención.
+
+Reproducción desde la raíz, con el entorno local preparado:
+
+```bash
+cd python
+../.venv/bin/python -m pytest -q -m 'not integration' -p no:cacheprovider
+../.venv/bin/ruff check .
+../.venv/bin/mypy chat chat_client
+cd ..
+LD_LIBRARY_PATH="$PWD/artifacts/n7/runtime/usr/lib/x86_64-linux-gnu" \
+CHAT_TEST_PG_BIN="$PWD/artifacts/n7/runtime/usr/lib/postgresql/18/bin" \
+CHAT_TEST_REDIS_SERVER="$PWD/artifacts/n7/runtime/usr/bin/redis-server" \
+CHAT_TEST_PYTHON="$PWD/.venv/bin/python" sh scripts/test_local_services.sh
+git diff --check
+```
+
+Límites: no se dispone de suscripción de navegador/proveedor Push real ni de
+proveedor SMTP real para homologación. Los tests HTTPS prueban protocolo y cifrado,
+no recepción en un navegador de producción. UI final, versiones Compose exactas,
+HTTPS/WSS de despliegue, staging y carga siguen pendientes. No se repite auditoría
+de dependencias ni se certifica producción. N8/N9 son los siguientes niveles.
+
 ## Continuación N6 · 2026-09-23
 
 Resultado: **93 pruebas unitarias y 71 de integración correctas (164 total)**.

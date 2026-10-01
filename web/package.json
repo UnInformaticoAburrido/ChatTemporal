@@ -1,0 +1,19 @@
+{
+  "name": "chat-temporal-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "playwright test",
+    "build:crypto": "node scripts/build-crypto.mjs",
+    "check:crypto": "node scripts/build-crypto.mjs --check"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "libsodium-wrappers": "0.8.4"
+  }
+}
