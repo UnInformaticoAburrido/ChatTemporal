@@ -46,6 +46,10 @@ def resource_router(identity: Identity, settings: Settings) -> APIRouter:
     async def conversation(conversation_id: CanonicalUUID, principal: PrincipalDependency) -> ConversationSummary:
         return await service.conversation(principal, conversation_id)
 
+    @router.get("/conversations/{conversation_id}/key")
+    async def conversation_key(conversation_id: CanonicalUUID, principal: PrincipalDependency) -> PublicKey:
+        return await service.conversation_key(principal, conversation_id)
+
     @router.get("/conversations/{conversation_id}/messages")
     async def history(conversation_id: CanonicalUUID, request: Request,
                       principal: PrincipalDependency) -> Page[StoredMessage]:

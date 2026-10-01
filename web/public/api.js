@@ -8,6 +8,28 @@ export class ApiError extends Error {
 }
 
 const messages = {
+  INVITATION_INVALID: "El código de invitación no es válido.",
+  INVITATION_REVOKED: "Esta invitación ha caducado o se ha renovado.",
+  HOST_KEY_UNAVAILABLE: "El anfitrión todavía no ha preparado sus claves.",
+  CONVERSATION_NOT_FOUND: "La conversación ya no está disponible.",
+  CONVERSATION_CLOSED: "La conversación está cerrada.",
+  GRACE_LIMIT_REACHED: "Se ha alcanzado el límite de mensajes antes de aceptar.",
+  VOTE_OPEN: "Espera a que termine la votación para enviar mensajes.",
+  VOTE_EXPIRED: "La votación ha terminado.",
+  VOTE_CONFLICT: "Tu voto ya está registrado y no se puede cambiar.",
+  MESSAGE_NOT_FOUND: "Aún no se puede confirmar este envío.",
+  MESSAGE_CORRUPTED: "No se ha podido autenticar y descifrar el mensaje.",
+  MESSAGE_TOO_LONG: "El mensaje admite hasta 256 caracteres.",
+  RECIPIENT_DISCONNECTED: "La otra persona no está conectada.",
+  OFFER_TIMEOUT: "La otra persona no respondió a tiempo.",
+  DELIVERY_TIMEOUT: "El envío ha caducado.",
+  NOT_CONNECTED: "Espera a que se restablezca la conexión.",
+  KEY_TRANSFER_NOT_READY: "El otro dispositivo todavía no ha enviado las claves.",
+  KEY_TRANSFER_EXPIRED: "La transferencia ha caducado. Inicia una nueva.",
+  KEY_TRANSFER_NOT_FOUND: "No se ha encontrado la transferencia.",
+  KEY_TRANSFER_CONFLICT: "Esta transferencia ya tiene una copia.",
+  PUSH_DISABLED: "Las notificaciones no están configuradas en el servidor.",
+
   INVALID_RECOVERY_PHRASE: 'El correo o la frase de recuperación no son correctos.',
   TOKEN_INVALID: 'El código o la sesión no son válidos. Comprueba los datos e inténtalo de nuevo.',
   SESSION_REVOKED: 'Esta sesión ha terminado. Recupera el acceso para continuar.',
@@ -136,6 +158,29 @@ export class ChatApi {
     return this.#authorized('/users/me/keys', { method: 'PUT', headers: { 'If-None-Match': '*' },
       body: { public_key: publicKey, protocol_version: 1 } });
   }
+  conversations(cursor = null) { return this.#authorized('/conversations' + this.#page(cursor)); }
+  #page(cursor) { return '?limit=50' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''); }
+  conversation(id) { return this.#authorized('/conversations/' + encodeURIComponent(id)); }
+  peerKey(id) { return this.#authorized('/conversations/' + encodeURIComponent(id) + '/key'); }
+  history(id, cursor = null) { return this.#authorized('/conversations/' + encodeURIComponent(id) + '/messages' + this.#page(cursor)); }
+  invitations() { return this.#authorized('/invitations/me'); }
+  regenerate() { return this.#authorized('/invitations/regenerate', { method: 'POST' }); }
+  redeem(code) { return this.#authorized('/invitations/redeem', { method: 'POST', body: { code } }); }
+  change(id, action) {
+    return this.#authorized('/conversations/' + encodeURIComponent(id) + (action === 'close' ? '' : '/' + action),
+      { method: action === 'close' ? 'DELETE' : 'POST' });
+  }
+  currentVote(id) { return this.#authorized('/conversations/' + encodeURIComponent(id) + '/vote'); }
+  ballot(id, choice) { return this.#authorized('/votes/' + encodeURIComponent(id) + '/ballots', { method: 'POST', body: { choice } }); }
+  status(id) { return this.#authorized('/messages/' + encodeURIComponent(id) + '/status'); }
+  ticket() { return this.#authorized('/auth/ws-ticket', { method: 'POST' }); }
+  createTransfer() { return this.#authorized('/key-transfers', { method: 'POST' }); }
+  transfer(id, method = 'GET', encrypted_blob) {
+    return this.#authorized('/key-transfers/' + encodeURIComponent(id), { method, ...(encrypted_blob ? { body: { encrypted_blob } } : {}) });
+  }
+  pushConfig() { return this.#authorized('/push/config'); }
+  subscribe(body) { return this.#authorized('/push/subscriptions', { method: 'POST', body }); }
+  unsubscribe(id) { return this.#authorized('/push/subscriptions/' + encodeURIComponent(id), { method: 'DELETE' }); }
   resend() { return this.#authorized('/users/resend-verification', { method: 'POST' }); }
   verify(token) { return this.#request('/users/verify-email', { method: 'POST', body: { token } }); }
   async logout() {

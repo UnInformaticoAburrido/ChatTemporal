@@ -2,12 +2,12 @@ import { LocalKey, KeyError } from './keys.js';
 
 // Solo copias cifradas descargadas explícitamente; ninguna escritura en storage del navegador.
 export async function mountKeys({ api, user, container, run, notify }) {
-  let active = null, candidate = null, stopped = false;
+  let active = null, candidate = null, stopped = false, disposeChat = null;
   const urls = new Set();
   const alive = () => !stopped && container.isConnected && api.signedIn;
   const check = () => { if (!alive()) throw new KeyError('KEY_LOCKED'); };
   function dispose() {
-    stopped = true; active?.lock(); candidate?.lock(); active = candidate = null;
+    stopped = true; disposeChat?.(); active?.lock(); candidate?.lock(); active = candidate = null;
     urls.forEach(url => URL.revokeObjectURL(url)); urls.clear();
   }
   function render(markup) {
@@ -48,12 +48,19 @@ export async function mountKeys({ api, user, container, run, notify }) {
         active?.lock(); candidate?.lock(); candidate = null; active = restored;
         render(`<h3 tabindex="-1">Clave preparada en esta sesión</h3>
           <p class="muted">La clave de tu copia coincide con la publicada. Conserva el archivo y su contraseña: volverás a necesitarlos al cerrar o recargar.</p>
-          <p class="muted">La pantalla de conversaciones todavía no está disponible.</p>
+          <section id="chat-panel" aria-label="Chat"></section>
           <button class="secondary" id="lock-key" type="button">Bloquear clave</button>`);
         container.querySelector('#lock-key').onclick = () => run(async () => {
-          active?.lock(); active = null; await start(); notify('Clave bloqueada en esta página.');
+          disposeChat?.(); disposeChat = null; active?.lock(); active = null; await start(); notify('Clave bloqueada en esta página.');
         });
         notify('Copia comprobada. La clave privada permanece en esta página.');
+        try {
+        const { mountChat } = await import('./chat-ui.js'); check();
+        disposeChat?.();
+        disposeChat = await mountChat({ api, key: active, container: container.querySelector('#chat-panel'), run, notify });
+        if (!alive()) { disposeChat(); disposeChat = null; }
+        } catch (error) { notify('La clave está abierta, pero no se pudo cargar el chat. Bloquéala y vuelve a abrirla para reintentar.', true); }
+
       } catch (error) { restored.lock(); throw error; }
     });
   }

@@ -30,7 +30,7 @@ handle @api {
 		}
 	}
 }
-@web path / /index.html /app.js /api.js /styles.css /keys.js /keys-ui.js /vendor/sodium.js /vendor/sodium.LICENSE.txt
+@web path / /index.html /app.js /api.js /styles.css /keys.js /keys-ui.js /chat.js /chat-ui.js /vendor/sodium.js /vendor/sodium.LICENSE.txt
 handle @web {
 	root * /srv/chat-web
 	header {

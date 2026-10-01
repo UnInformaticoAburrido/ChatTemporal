@@ -94,14 +94,14 @@ export class LocalKey {
     return { protocol_version: 1, crypto_meta: binary(meta),
       ciphertext: binary(sodium.crypto_box_easy(encoder.encode(text), nonce, decode(publicKey, 32), this.#secret)) };
   }
-  decrypt(message) {
+  decrypt(message, ownRecipient = null) {
     this.#check();
     if (message?.protocol_version !== 1) throw new KeyError('KEY_FILE_INVALID');
     const meta = decode(message.crypto_meta, 56), ciphertext = decode(message.ciphertext);
     if (ciphertext.length < 16 || ciphertext.length > 4096) throw new KeyError('KEY_FILE_INVALID');
     let plain;
     try {
-      plain = sodium.crypto_box_open_easy(ciphertext, meta.slice(0, 24), meta.slice(24), this.#secret);
+      plain = sodium.crypto_box_open_easy(ciphertext, meta.slice(0, 24), ownRecipient ? decode(ownRecipient, 32) : meta.slice(24), this.#secret);
       return new TextDecoder('utf-8', { fatal: true }).decode(plain);
     } catch { throw new KeyError('MESSAGE_CORRUPTED'); }
     finally { if (plain) sodium.memzero(plain); }
