@@ -26,9 +26,12 @@ def summary(row: ConversationRecord) -> ConversationSummary:
 class Resources:
     # DEC-52: exponer ahora las lecturas normativas permite comprobar el cursor
     # con permisos reales; crear/aceptar/cerrar y enviar siguen en N4/N5.
-    async def replace_key(self, principal: Principal, data: PublicKeyInput, *, rotate: bool = False) -> PublicKey:
+    async def replace_key(self, principal: Principal, data: PublicKeyInput, *, rotate: bool = False,
+                          only_if_absent: bool = False) -> PublicKey:
         async with transaction() as unit:
             await IdentityStore(unit.connection).authenticated(principal.user.id, principal.sid, lock=True)
+            if only_if_absent and await ResourceStore(unit.connection).key(principal.user.id, principal.user.id):
+                raise APIError("KEY_ALREADY_EXISTS", 412, "A public key already exists.")
             record = await ResourceStore(unit.connection).replace_key(
                 principal.user.id, data.public_key, data.protocol_version, rotate=rotate,
             )

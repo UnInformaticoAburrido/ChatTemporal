@@ -49,7 +49,9 @@ async def run() -> None:
             assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
             assert "'unsafe-inline'" not in page.headers["content-security-policy"]
             assert page.headers["referrer-policy"] == "no-referrer"
-            for asset in ("/app.js", "/api.js", "/styles.css"):
+            assert "'wasm-unsafe-eval'" in page.headers["content-security-policy"]
+            assert "'unsafe-eval'" not in page.headers["content-security-policy"]
+            for asset in ("/app.js", "/api.js", "/styles.css", "/keys.js", "/keys-ui.js", "/vendor/sodium.js"):
                 response = await api.get(asset)
                 assert response.status_code == 200 and response.headers["x-content-type-options"] == "nosniff"
             for private in ("/package.json", "/tests/api.test.mjs", "/.git/config", "/missing"):

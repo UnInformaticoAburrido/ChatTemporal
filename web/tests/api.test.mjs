@@ -147,3 +147,22 @@ test('una petición antigua no utiliza ni revoca la sesión que la sustituye', a
   await login;
   assert.equal(reads, 0); assert.equal(api.signedIn, true);
 });
+
+test('consulta propia distingue ausencia de caída y publicación usa precondición y solo pública', async () => {
+  const calls = [];
+  let unavailable = false;
+  const api = new ChatApi(async (path, options) => {
+    calls.push({ path, options });
+    if (path.endsWith('/recover')) return response(tokens());
+    if (options.method === 'PUT') return response({ public_key: 'public', protocol_version: 1 });
+    return response({ error: { code: unavailable ? 'TEMPORARY_UNAVAILABLE' : 'USER_NOT_FOUND' } }, unavailable ? 503 : 404);
+  });
+  await api.recover('ana@example.com', 'phrase');
+  assert.equal(await api.ownKey('owner'), null);
+  unavailable = true;
+  await assert.rejects(api.ownKey('owner'), { code: 'TEMPORARY_UNAVAILABLE' });
+  await api.createKey('public');
+  const sent = calls.at(-1);
+  assert.equal(sent.options.headers['If-None-Match'], '*');
+  assert.deepEqual(JSON.parse(sent.options.body), { public_key: 'public', protocol_version: 1 });
+});

@@ -8,8 +8,8 @@ N6 completa las votaciones y la conservación/eliminación automática de la gra
 N7 añade transferencia de claves, replay de historial y Web Push genérico.
 N8 añade copias cifradas, métricas/alertas, retención de logs y apagado controlado.
 N9 incorpora CI, umbrales de cobertura, auditorías y pruebas adicionales de seguridad.
-**El MVP completo sigue pendiente**: el cliente web ya permite gestionar identidad;
-faltan claves locales, conversaciones y mensajería en la interfaz, además de N9.
+**El MVP completo sigue pendiente**: el cliente web ya permite gestionar identidad y claves mediante copias cifradas;
+faltan conversaciones y mensajería en la interfaz, además de N9.
 CI ya valida las imágenes fijadas, cobertura, seguridad,
 HTTPS/WSS y recuperación tras reiniciar PostgreSQL/Redis. N9 sigue en curso:
 quedan completar el cliente, proveedores reales, carga y comprobaciones del host/staging.
@@ -24,6 +24,7 @@ quedan completar el cliente, proveedores reales, carga y comprobaciones del host
 - [N7 documentado por subapartados](docs/N7_RECUPERACION_PUSH.md)
 - [N8 documentado por subapartados](docs/N8_OPERACION_SEGURIDAD.md)
 - [N9: CI, cobertura y puertas pendientes de release](docs/N9_HOMOLOGACION_RELEASE.md)
+- [Claves del cliente: copias cifradas y publicación inicial](docs/CLAVES_CLIENTE.md)
 - [Cliente web: identidad y próximos bloques](docs/CLIENTE_WEB.md)
 - [Preparar carga online, reconexiones y fallos efímeros verificables](docs/CARGA.md)
 - [Runbooks de backup, alertas, logs y despliegue](operations/README.md)

@@ -5,12 +5,14 @@ const screen = document.querySelector('#screen');
 const notice = document.querySelector('#notice');
 let user = null;
 let busy = false;
+let disposeKeys = null;
 
 function message(text, error = false) {
   notice.textContent = text;
   notice.className = text ? (error ? 'notice error' : 'notice success') : '';
 }
 function show(markup) {
+  disposeKeys?.(); disposeKeys = null;
   screen.innerHTML = markup; // Solo plantillas constantes; datos de usuario siempre vía textContent.
   screen.querySelector('h2')?.focus();
 }
@@ -104,7 +106,7 @@ function showAccount() {
       <form id="verify-form"><label for="code">Código de verificación</label><input id="code" name="code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="128" required>
       <button class="primary" type="submit">Verificar correo</button></form>
       <button class="secondary" id="resend" type="button">Enviar otro código</button>` :
-      '<p class="muted">Tu cuenta está preparada. La pantalla de conversaciones estará disponible en una próxima entrega.</p>'}
+      '<p class="muted">Tu cuenta está preparada. Configura las claves que protegerán tus conversaciones.</p><button class="primary" id="open-keys" type="button">Gestionar claves de conversación</button><section id="keys-panel" aria-label="Claves de conversación"></section>'}
     <button class="text-button" id="logout" type="button">Cerrar sesión</button>`);
   screen.querySelector('#user-name').textContent = user.nick;
   screen.querySelector('#user-email').textContent = user.email;
@@ -119,13 +121,26 @@ function showAccount() {
       await api.resend(); message('Hemos enviado otro código a tu correo.');
     });
   }
+  if (user.email_verified) {
+    screen.querySelector('#open-keys').onclick = () => perform(async () => {
+      const container = screen.querySelector('#keys-panel');
+      const owner = user;
+      const { mountKeys } = await import('./keys-ui.js');
+      if (!container.isConnected || user !== owner || !api.signedIn) return;
+      disposeKeys?.(); disposeKeys = null;
+      const dispose = await mountKeys({ api, user: owner, container, run: perform, notify: message });
+      if (!container.isConnected || user !== owner || !api.signedIn) dispose();
+      else disposeKeys = dispose;
+    });
+  }
   screen.querySelector('#logout').onclick = () => perform(async () => {
+    disposeKeys?.(); disposeKeys = null;
     try { await api.logout(); }
     catch { user = null; showAccess('recover'); message('Has salido de esta página. No hemos podido confirmar el cierre en el servidor; recuperar el acceso revocará la sesión anterior.', true); return; }
     user = null; showAccess('recover'); message('Sesión cerrada.');
   });
 }
 // Una página recuperada desde la caché de navegación no debe restaurar secretos visibles.
-window.addEventListener('pagehide', () => { api.clear(); user = null; screen.replaceChildren(); message(''); });
+window.addEventListener('pagehide', () => { disposeKeys?.(); disposeKeys = null; api.clear(); user = null; screen.replaceChildren(); message(''); });
 window.addEventListener('pageshow', event => { if (event.persisted) showAccess('recover'); });
 showAccess();

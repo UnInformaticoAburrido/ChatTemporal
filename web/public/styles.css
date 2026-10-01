@@ -459,3 +459,32 @@ footer {
   }
 
 }
+#keys-panel:not(:empty) {
+  margin-top: 28px;
+  border-top: 1px solid #dce2d8;
+  padding-top: 20px;
+}
+#keys-panel h3 {
+  line-height: 1.35;
+  font-size: 20px;
+  letter-spacing: -.4px;
+  margin: 0 0 12px;
+  outline: none;
+}
+#keys-panel details {
+  margin-top: 20px;
+  font-size: 13px;
+}
+#keys-panel summary {
+  cursor: pointer;
+  color: #28563f;
+  padding: 8px 0;
+}
+input[type=file] {
+  font-size: 12px;
+  overflow: hidden;
+}
+summary:focus-visible {
+  outline: 3px solid #829c47;
+  outline-offset: 3px;
+}

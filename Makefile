@@ -29,7 +29,7 @@ test:
 	cd python && python -m pytest -m 'not integration'
 
 check:
-	cd python && ruff check --config pyproject.toml . ../scripts ../operations && mypy chat chat_client
+	cd python && ruff check --config pyproject.toml . ../scripts ../operations ../web/tests/interop.py && mypy chat chat_client
 
 # Requiere haber combinado cobertura unitaria e integración; falla si faltan módulos.
 coverage-check:

@@ -19,6 +19,14 @@ const messages = {
   RATE_LIMITED: 'Has realizado demasiados intentos. Espera antes de volver a intentarlo.',
   TEMPORARY_UNAVAILABLE: 'El servicio no está disponible ahora. Inténtalo más tarde.',
   NETWORK_ERROR: 'No hemos podido confirmar la operación. Comprueba tu conexión antes de volver a intentarlo.',
+  USER_NOT_FOUND: 'No se ha encontrado el recurso solicitado.',
+  KEY_ALREADY_EXISTS: 'Ya hay una clave publicada. Abre su copia para continuar.',
+  KEY_FILE_INVALID: 'El archivo no es una copia de claves válida de Chat Temporal.',
+  KEY_PASSWORD_LENGTH: 'Usa una contraseña de entre 12 y 256 caracteres para proteger tu copia.',
+  KEY_ACCOUNT_MISMATCH: 'Esta copia pertenece a otra cuenta.',
+  KEY_DECRYPT_FAILED: 'No se puede abrir la copia. Comprueba la contraseña y que el archivo no esté dañado.',
+  KEY_MISMATCH: 'La copia no corresponde a la clave publicada. No se ha sustituido ninguna clave.',
+  KEY_LOCKED: 'La clave está bloqueada. Abre tu copia para continuar.',
 };
 export function errorMessage(error) {
   return (Object.hasOwn(messages, error?.code) ? messages[error.code] : null) || (error?.status === 422
@@ -50,13 +58,13 @@ export class ChatApi {
     this.#tokens = { access_token: tokens.access_token, refresh_token: tokens.refresh_token };
     this.#expires = this.now() + tokens.expires_in * 1000;
   }
-  async #request(path, { body, method = 'GET', access } = {}) {
+  async #request(path, { body, method = 'GET', access, headers = {} } = {}) {
     let response;
     try {
       response = await this.fetcher('/api/v1' + path, {
         method, credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
         signal: AbortSignal.timeout(15000),
-        headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}),
+        headers: { ...headers, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}),
           ...(access ? { Authorization: 'Bearer ' + access } : {}) },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
@@ -120,6 +128,14 @@ export class ChatApi {
     }
   }
   me() { return this.#authorized('/users/me'); }
+  async ownKey(userId) {
+    try { return await this.#authorized('/users/' + encodeURIComponent(userId) + '/keys'); }
+    catch (error) { if (error.status === 404 && error.code === 'USER_NOT_FOUND') return null; throw error; }
+  }
+  createKey(publicKey) {
+    return this.#authorized('/users/me/keys', { method: 'PUT', headers: { 'If-None-Match': '*' },
+      body: { public_key: publicKey, protocol_version: 1 } });
+  }
   resend() { return this.#authorized('/users/resend-verification', { method: 'POST' }); }
   verify(token) { return this.#request('/users/verify-email', { method: 'POST', body: { token } }); }
   async logout() {

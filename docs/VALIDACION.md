@@ -1,5 +1,26 @@
 # Validación de la entrega
 
+## Claves del cliente web · 2026-10-01
+
+Base `9ae0d6c`: [CI completa verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36598209657),
+279 pruebas entre backend y web; cobertura Python 91,21 %.
+
+Se añade generación X25519 local, copia cifrada portable, apertura obligatoria
+antes de publicar y comprobación de coincidencia con la pública autoritativa.
+Publicación inicial con If-None-Match: * bajo lock de usuario; existente=412.
+El cliente no sustituye ni rota claves existentes.
+
+Validación local: 17 pruebas Node de sesiones/criptografía, 18 recorridos Chromium
+en escritorio/móvil y 5 integraciones de recursos con PostgreSQL/Redis reales.
+La carrera entre cuatro publicaciones produce una creación y tres rechazos,
+sin modificar la ganadora; evidencia `/tmp/chat-persistence-test.LqjAdv`.
+Interop crypto_box con Python en ambos sentidos, contraseñas erróneas, alteración
+de cabecera/ciphertext, formatos abusivos y bloqueo durante derivación verificados.
+UI con API interceptada: descarga/restauración reales, conflicto y respuesta perdida;
+no equivale a E2E completo con SMTP. Npm audit, Ruff, mypy y actionlint correctos;
+CI añade interop y comparación exacta del bundle con el lock.
+Alcance y siguientes tareas en [CLAVES_CLIENTE.md](CLAVES_CLIENTE.md).
+
 ## Cliente web de identidad · 2026-09-29
 
 El backend de partida `2120e96` tiene [CI completa en verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36427638875):

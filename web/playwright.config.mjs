@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
-  testDir: './tests', testMatch: 'identity.spec.mjs', fullyParallel: true,
+  testDir: './tests', testMatch: '*.spec.mjs', fullyParallel: true,
   retries: 0, workers: 2, reporter: 'list',
   use: { baseURL: 'http://127.0.0.1:4173', trace: 'off', screenshot: 'off', video: 'off' },
   projects: [

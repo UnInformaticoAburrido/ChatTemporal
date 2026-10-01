@@ -47,7 +47,7 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
     application.add_middleware(
         CORSMiddleware, allow_origins=settings.allowed_origins,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "If-None-Match"],
         expose_headers=["X-Request-ID"],
     )
 

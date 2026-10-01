@@ -192,3 +192,12 @@ cita correspondiente y se descartará conforme a la instrucción del usuario.
 | DEC-92 | Primer incremento limitado a identidad. Tokens en memoria, sin persistir privadas ni generar claves nuevas: recargar/cerrar exige nuevo acceso. La UI explica esta limitación y distingue recuperación de identidad de descifrado. Persistencia segura y bindings libsodium se resolverán antes de la mensajería. |
 | DEC-93 | Refresh compartido por llamadas simultáneas, sin reintento automático si su resultado es incierto. Generación de sesión impide restaurar credenciales o revocar una sesión nueva por respuestas de peticiones antiguas. Registro y recuperación tampoco se reenvían automáticamente. |
 | DEC-94 | Playwright solo para pruebas, lock npm y auditoría CI. Escenarios de navegador con API interceptada se reportan separados de integración backend/Caddy con servicios reales. No se publican capturas ni traces con frases o tokens. |
+
+## Claves web · 2026-10-01
+
+| Decisión | Aplicación |
+|---|---|
+| DEC-95 | Custodia inicial por archivo cifrado portable, con contraseña independiente; privadas desbloqueadas solo en memoria. Sin escritura automática en storage del navegador. Antes de publicar una pública inicial, volver a abrir su copia y comprobarla. La limpieza de buffers no garantiza borrado físico del navegador/SO. |
+| DEC-96 | Copia local v1: AES-256-GCM, PBKDF2-HMAC-SHA256/600000, salt16/nonce12 aleatorios; cabecera canónica autenticada y vinculada a user_id/pública. Tamaño, parámetros y campos acotados antes de derivar. No sustituye el formato QR de N7. |
+| DEC-97 | PUT de pública admite If-None-Match: * con comprobación bajo lock de usuario; existente=412, otras precondiciones=400. Preservar PUT sin cabecera/rotate normativos. El cliente no rota: compara la copia con la pública y consulta tras respuestas dudosas. |
+| DEC-98 | libsodium-wrappers 0.8.4, bundle local generado por esbuild 0.28.2 y comprobado byte a byte en CI desde el lock. CSP habilita solo wasm-unsafe-eval; interop crypto_box real con Python. Detalles y fuentes en CLAVES_CLIENTE.md. |

@@ -1,6 +1,6 @@
 # N9 · Homologación y release
 
-Continuación de N8, actualizada 2026-09-28. Fuentes normativas: §§22, 29 y 31.
+Continuación de N8, actualizada 2026-10-01. Fuentes normativas: §§22, 29 y 31.
 **En curso; no autoriza un despliegue de producción.** Completar la interfaz cliente,
 staging, proveedores reales y capacidad del host siguen siendo puertas pendientes.
 
@@ -8,7 +8,7 @@ staging, proveedores reales y capacidad del host siguen siendo puertas pendiente
 
 `.github/workflows/quality.yml` ejecuta en push, pull_request y workflow_dispatch:
 
-- Cliente web: Node 24.21.0, lock npm auditado, pruebas de sesión y Chromium
+- Cliente web: Node 24.21.0, lock npm auditado, pruebas de sesión/claves e interoperabilidad Python, bundle verificado y Chromium
   escritorio/móvil con API interceptada. Caddy sirve los assets reales con
   cabeceras verificadas por el smoke HTTPS. Ver [alcance y pendientes](CLIENTE_WEB.md).
 

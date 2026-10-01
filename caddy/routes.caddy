@@ -30,11 +30,11 @@ handle @api {
 		}
 	}
 }
-@web path / /index.html /app.js /api.js /styles.css
+@web path / /index.html /app.js /api.js /styles.css /keys.js /keys-ui.js /vendor/sodium.js /vendor/sodium.LICENSE.txt
 handle @web {
 	root * /srv/chat-web
 	header {
-		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 		Cache-Control "no-store"
 		Referrer-Policy "no-referrer"
 		X-Content-Type-Options "nosniff"
