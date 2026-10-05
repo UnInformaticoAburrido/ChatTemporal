@@ -51,10 +51,15 @@ async def run() -> None:
             assert page.headers["referrer-policy"] == "no-referrer"
             assert "'wasm-unsafe-eval'" in page.headers["content-security-policy"]
             assert "'unsafe-eval'" not in page.headers["content-security-policy"]
-            for asset in ("/app.js", "/api.js", "/styles.css", "/keys.js", "/keys-ui.js", "/vendor/sodium.js"):
+            assert "worker-src 'self'" in page.headers["content-security-policy"]
+            for asset in ("/app.js", "/api.js", "/styles.css", "/keys.js", "/keys-ui.js", "/chat.js",
+                          "/chat-ui.js", "/transfers.js", "/transfers-ui.js", "/qr.js", "/vendor/qr.js",
+                          "/vendor/sodium.js", "/push.js", "/push-ui.js", "/service-worker.js", "/bootstrap.js"):
                 response = await api.get(asset)
                 assert response.status_code == 200 and response.headers["x-content-type-options"] == "nosniff"
-            for private in ("/package.json", "/tests/api.test.mjs", "/.git/config", "/missing"):
+                assert response.headers["cache-control"] == "no-store"
+            for private in ("/package.json", "/tests/api.test.mjs", "/.git/config", "/missing",
+                            "/fixtures/main-app.html", "/integrations/main-app/launch-chat.mjs"):
                 assert (await api.get(private)).status_code == 404
             for path in ("/metrics", "/health/ready", "/docs", "/openapi.json"):
                 assert (await api.get(path)).status_code == 404

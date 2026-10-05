@@ -61,6 +61,11 @@ class Exchange(StrictDTO):
     bootstrap_token: str = Field(min_length=1, max_length=8192, repr=False)
 
 
+class BootstrapWebConfig(StrictDTO):
+    origins: list[str]
+    protocol_version: int = 1
+
+
 class TokenPair(StrictDTO):
     access_token: str = Field(repr=False)
     refresh_token: str = Field(repr=False)

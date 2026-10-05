@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "python"))
 from chat_client.crypto import EncryptedMessage, KeyPair, decrypt_text, encrypt_text  # noqa: E402
+from chat_client.recovery import decrypt_bundle, encrypt_bundle  # noqa: E402
 
 
 def decode_binary(value: str, **_limits: int) -> bytes:
@@ -17,6 +18,14 @@ def encode_binary(value: bytes) -> str:
 
 
 value = json.load(sys.stdin)
+if value.get("action") == "transfer":
+    from uuid import UUID
+
+    identifier = UUID(value["transfer_id"])
+    clear = decrypt_bundle(identifier, value["encrypted_blob"], value["qr_payload"])
+    bundle = encrypt_bundle(identifier, clear)
+    print(json.dumps({**bundle.upload(), "qr_payload": bundle.qr_payload(), "clear": encode_binary(clear)}))
+    sys.exit(0)
 recipient = KeyPair(decode_binary(value["private"], minimum=32, maximum=32))
 message = value["message"]
 assert decrypt_text(EncryptedMessage(decode_binary(message["ciphertext"], maximum=4096),

@@ -16,7 +16,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip==26.2.0 \
 USER 1000:1000
 CMD ["python", "-m", "chat.bootstrap", "api"]
 
-FROM runtime AS test
+FROM runtime AS backup
 USER root
 COPY --from=pg-client /pg-client /opt/pg-client
 ENV CHAT_TEST_PG_BIN=/opt/pg-client/bin LD_LIBRARY_PATH=/opt/pg-client/lib
@@ -25,6 +25,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && /opt/pg-client/bin/pg_dump --version \
     && /opt/pg-client/bin/psql --version
+USER 1000:1000
+
+FROM backup AS test
+USER root
 COPY requirements-dev.lock requirements-client.lock /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements-dev.lock
 USER 1000:1000

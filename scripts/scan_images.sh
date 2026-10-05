@@ -4,6 +4,9 @@ set -eu
 scanner=${CHAT_TRIVY:-artifacts/n9/tools/trivy}
 mkdir -p artifacts/n9
 docker compose --profile observability config --images | sort -u > artifacts/n9/images.txt
+if [ -n "${CHAT_EXTRA_IMAGE:-}" ]; then
+    printf '%s\n' "$CHAT_EXTRA_IMAGE" >> artifacts/n9/images.txt
+fi
 index=0
 failed=0
 while IFS= read -r image; do

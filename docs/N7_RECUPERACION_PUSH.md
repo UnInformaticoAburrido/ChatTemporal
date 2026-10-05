@@ -7,6 +7,11 @@ unitarias y 84 de integración correctas (192 total)**, Ruff y mypy estricto
 en 50 módulos. No hay nuevas dependencias. Se mantiene pendiente homologar
 con navegador/proveedor Push real y el entorno exacto de producción.
 
+La [transferencia de claves web](TRANSFERENCIAS_WEB.md) ya permite preparar el
+origen, acceder por bootstrap manual, renderizar/leer QR localmente y guardar/abrir
+la copia recibida antes de borrar el blob. Cámara física, integración automática
+con el emisor bootstrap y E2E con proveedores reales siguen pendientes.
+
 ## N7.1 · Acceso temporal entre dispositivos — completado
 
 Resolver DUD-08 conservando una sola sesión normal. Exchange revoca como antes
@@ -84,6 +89,12 @@ verificado, validación de VAPID y descifrado independiente del payload; rechazo
 de direcciones locales/privadas y DNS mixto; upsert/propiedad/revocación; stored
 offline, deduplicación, reintentos con recibos, 404/410 y offers solo offline.
 Estas pruebas no se presentan como recepción en FCM/Firefox/Apple ni UI de navegador.
+
+Incremento web 2026-10-05: alta/baja voluntarias, permiso por gesto, avisos de texto
+fijo y enfoque sin recargar. GET autenticados de configuración pública y
+suscripciones de la sesión actual permiten conciliar respuestas perdidas.
+Registro real del worker en Chromium; proveedor Push simulado, separado del
+receptor HTTPS backend. Detalles en [PUSH_WEB.md](PUSH_WEB.md).
 
 ## N7.5 · Validación, operación y publicación — completado
 

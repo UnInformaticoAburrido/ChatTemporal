@@ -16,6 +16,7 @@ const messages = {
   GRACE_LIMIT_REACHED: "Se ha alcanzado el límite de mensajes antes de aceptar.",
   VOTE_OPEN: "Espera a que termine la votación para enviar mensajes.",
   VOTE_EXPIRED: "La votación ha terminado.",
+  VOTE_NOT_FOUND: "La votación ya no está disponible.",
   VOTE_CONFLICT: "Tu voto ya está registrado y no se puede cambiar.",
   MESSAGE_NOT_FOUND: "Aún no se puede confirmar este envío.",
   MESSAGE_CORRUPTED: "No se ha podido autenticar y descifrar el mensaje.",
@@ -28,7 +29,20 @@ const messages = {
   KEY_TRANSFER_EXPIRED: "La transferencia ha caducado. Inicia una nueva.",
   KEY_TRANSFER_NOT_FOUND: "No se ha encontrado la transferencia.",
   KEY_TRANSFER_CONFLICT: "Esta transferencia ya tiene una copia.",
+  TRANSFER_INVALID: "El código de transferencia no es válido.",
+  TRANSFER_DECRYPT_FAILED: "No se puede autenticar la transferencia. Comprueba el QR y el dispositivo de origen.",
+  TRANSFER_ACCESS_EXPIRED: "El permiso de este dispositivo ha caducado. Abre tu copia de claves en el nuevo dispositivo.",
+  QR_NOT_FOUND: "No se ha encontrado un QR legible en la imagen.",
+  CAMERA_UNAVAILABLE: "No se pudo abrir la cámara. Puedes leer una imagen o pegar el código.",
   PUSH_DISABLED: "Las notificaciones no están configuradas en el servidor.",
+  PUSH_UNAVAILABLE: "Este navegador no permite notificaciones aquí. Usa una conexión segura y comprueba sus ajustes.",
+  PUSH_PERMISSION_DENIED: "No se han permitido las notificaciones. Puedes cambiar el permiso en los ajustes del navegador.",
+  PUSH_KEY_CHANGED: "La configuración de notificaciones ha cambiado. Desactívalas antes de volver a activarlas.",
+  PUSH_SUBSCRIPTION_CONFLICT: "Esta suscripción pertenece a otra cuenta. Desactívala en este navegador antes de activar la tuya.",
+  PUSH_PENDING: "Queda pendiente confirmar la desactivación. Vuelve a intentarlo cuando tengas conexión.",
+  BOOTSTRAP_UNAVAILABLE: "El acceso automático no está disponible. Puedes introducir un código de acceso de la aplicación principal.",
+  BOOTSTRAP_TIMEOUT: "No se recibió el acceso de la aplicación principal a tiempo. Vuelve a abrir el chat o introduce un código nuevo.",
+  BOOTSTRAP_INVALID: "No se pudo validar el acceso automático. Vuelve a abrir el chat desde la aplicación principal.",
 
   INVALID_RECOVERY_PHRASE: 'El correo o la frase de recuperación no son correctos.',
   TOKEN_INVALID: 'El código o la sesión no son válidos. Comprueba los datos e inténtalo de nuevo.',
@@ -60,12 +74,17 @@ export class ChatApi {
   #expires = 0;
   #refreshing = null;
   #generation = 0;
+  #entry = null;
+  #uploaders = new Set();
   constructor(fetcher = globalThis.fetch.bind(globalThis), now = Date.now) {
     this.fetcher = fetcher;
     this.now = now;
   }
   get signedIn() { return this.#tokens !== null; }
+  get canReceiveHandoff() { return this.signedIn && this.#entry === 'exchange'; }
   clear() {
+    for (const uploader of this.#uploaders) uploader.dispose();
+    this.#uploaders.clear(); this.#entry = null;
     this.#generation += 1;
     this.#tokens = null;
     this.#expires = 0;
@@ -104,6 +123,7 @@ export class ChatApi {
     const data = await this.#request('/users/register', { method: 'POST', body: { nick, email } });
     if (generation !== this.#generation) throw new ApiError('SESSION_LOST');
     this.#install(data.tokens);
+    this.#entry = 'register';
     return { user: data.user, recovery_mnemonic: data.recovery_mnemonic };
   }
   async recover(email, recovery_mnemonic) {
@@ -112,6 +132,37 @@ export class ChatApi {
     const tokens = await this.#request('/auth/recover', { method: 'POST', body: { email, recovery_mnemonic } });
     if (generation !== this.#generation) throw new ApiError('SESSION_LOST');
     this.#install(tokens);
+    this.#entry = 'recover';
+  }
+  async exchange(bootstrap_token) {
+    this.clear();
+    const generation = this.#generation;
+    const tokens = await this.#request('/auth/exchange', { method: 'POST', body: { bootstrap_token } });
+    if (generation !== this.#generation) throw new ApiError('SESSION_LOST');
+    this.#install(tokens); this.#entry = 'exchange';
+  }
+  async prepareUploader() {
+    const generation = this.#generation;
+    let access = await this.#access();
+    if (generation !== this.#generation) throw new ApiError('SESSION_LOST');
+    const expiresAt = this.#expires;
+    const uploader = {
+      expiresAt,
+      upload: async (id, encrypted_blob) => {
+        if (!access || this.now() >= expiresAt) throw new ApiError('TRANSFER_ACCESS_EXPIRED');
+        // Capturado antes del exchange: sin refresh ni acceso REST general desde el dispositivo sustituido.
+        try { return await this.#request('/key-transfers/' + encodeURIComponent(id), {
+          method: 'PUT', body: { encrypted_blob }, access,
+        }); }
+        catch (error) {
+          if (error.status === 401) { uploader.dispose(); throw new ApiError('TRANSFER_ACCESS_EXPIRED'); }
+          throw error;
+        }
+      },
+      dispose: () => { access = null; this.#uploaders.delete(uploader); },
+    };
+    this.#uploaders.add(uploader);
+    return uploader;
   }
   async #access() {
     if (!this.#tokens) throw new ApiError('SESSION_LOST');
@@ -179,6 +230,8 @@ export class ChatApi {
     return this.#authorized('/key-transfers/' + encodeURIComponent(id), { method, ...(encrypted_blob ? { body: { encrypted_blob } } : {}) });
   }
   pushConfig() { return this.#authorized('/push/config'); }
+  bootstrapConfig() { return this.#request('/auth/bootstrap-config'); }
+  pushSubscriptions() { return this.#authorized('/push/subscriptions'); }
   subscribe(body) { return this.#authorized('/push/subscriptions', { method: 'POST', body }); }
   unsubscribe(id) { return this.#authorized('/push/subscriptions/' + encodeURIComponent(id), { method: 'DELETE' }); }
   resend() { return this.#authorized('/users/resend-verification', { method: 'POST' }); }

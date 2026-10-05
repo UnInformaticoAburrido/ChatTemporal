@@ -1,7 +1,8 @@
 # Claves del cliente web · 2026-10-01
 
 Segundo incremento del cliente. Desde una cuenta verificada, «Gestionar claves
-de conversación» permite crear y restaurar claves; todavía no envía mensajes.
+de conversación» permite crear y restaurar claves. Tras abrir la copia aparece
+el [chat cifrado](CLIENTE_WEB.md).
 
 ## Custodia y recorrido
 
@@ -13,7 +14,7 @@ servidor. La API recibe únicamente public_key y protocol_version.
 
 El navegador no guarda privadas, copias ni tokens en localStorage, sessionStorage
 o IndexedDB. La privada desbloqueada vive en memoria y se pone a cero al bloquear,
-cerrar sesión, cambiar de pantalla o abandonar la página; también se descartan
+cerrar sesión, abandonar la gestión de claves o salir de la página; también se descartan
 operaciones criptográficas que terminan después de abandonar su pantalla. Esto
 es una limpieza de buffers propios, **no una garantía de borrado físico** de toda
 copia interna del navegador, sistema operativo o extensiones.
@@ -22,7 +23,9 @@ Conservar archivo y contraseña por separado. Al recargar se requiere acceder a
 la cuenta y abrir la copia de nuevo. La pérdida del archivo o contraseña no se
 resuelve con las 24 palabras: estas recuperan identidad, no privadas de cifrado.
 Este incremento no permite rotar una clave existente ni recuperar su copia desde
-el servidor. La transferencia QR/replay de N7 sigue pendiente en la interfaz.
+el servidor salvo el blob opaco de una transferencia explícita. La [transferencia QR](TRANSFERENCIAS_WEB.md)
+permite trasladar la clave a otra sesión; mientras se prepara el envío permanece
+en memoria hasta terminar/cerrar ese recorrido. El replay local se ofrece en el chat.
 
 ## Formato local v1
 
@@ -76,8 +79,8 @@ finales en staging; las pruebas actuales usan Chromium y viewport móvil.
 
 `LocalKey.encrypt/decrypt` implementa el [crypto_box de libsodium](https://libsodium.gitbook.io/doc/public-key_cryptography/authenticated_encryption)
 con nonce de 24 bytes, crypto_meta=nonce||pública de 56, versión 1 y límite de
-256 puntos de código. Son primitivas preparadas para el siguiente bloque; aún
-no hay transporte de mensajes ni historial en la interfaz.
+256 puntos de código. El chat utiliza estas primitivas para WebSocket, historial stored y
+replay local. Las pruebas de transporte y UI se describen en CLIENTE_WEB.md.
 
 Pruebas de Node verifican exportación/restauración, autenticación, límites,
 bloqueo y cifrado/descifrado en ambos sentidos con chat_client.crypto de Python.

@@ -21,26 +21,32 @@ from chat.backup import DURABLE, backup, restore  # noqa: E402
 from chat.logging import event  # noqa: E402
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["backup", "drill"])
-    args = parser.parse_args()
-    destination = Path(os.environ.get("CHAT_BACKUP_DIR", str(ROOT / "backups")))
-    metrics = ROOT / "artifacts/operations"
-    metrics.mkdir(parents=True, exist_ok=True)
-    os.chmod(metrics, 0o755)
-    with (metrics / "backup.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        started = time.monotonic()
+def database_url() -> str:
+    source = Path(os.environ.get("DATABASE_URL_FILE", str(ROOT / "secrets/database_url")))
+    config = conninfo_to_dict(source.read_text().strip())
+    if os.environ.get("CHAT_BACKUP_DIRECT_DSN") != "1":
         container = subprocess.check_output(["docker", "compose", "ps", "-q", "postgresql"], cwd=ROOT, text=True).strip()
         networks = json.loads(subprocess.check_output(["docker", "inspect", "--format",
                               "{{json .NetworkSettings.Networks}}", container], text=True))
         addresses = [v["IPAddress"] for k, v in networks.items() if k.endswith("_backend")]
         if len(addresses) != 1:
             raise RuntimeError("Red PostgreSQL ambigua")
-        config = conninfo_to_dict((ROOT / "secrets/database_url").read_text().strip())
         config.update(host=addresses[0], port="5432")
-        dsn = make_conninfo(**config)
+    return make_conninfo(**config)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("action", choices=["backup", "drill"])
+    args = parser.parse_args()
+    destination = Path(os.environ.get("CHAT_BACKUP_DIR", str(ROOT / "backups")))
+    metrics = Path(os.environ.get("CHAT_BACKUP_METRICS_DIR", str(ROOT / "artifacts/operations")))
+    metrics.mkdir(parents=True, exist_ok=True)
+    os.chmod(metrics, 0o755)
+    with (metrics / "backup.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        started = time.monotonic()
+        dsn = database_url()
         key = Path(os.environ["CHAT_BACKUP_KEY_FILE"]).read_bytes()
         if len(key) != 32:
             raise ValueError("Clave de backup inválida")

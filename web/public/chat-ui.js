@@ -1,7 +1,7 @@
 import { Chat } from './chat.js';
 import { errorMessage } from './api.js';
 
-export async function mountChat({ api, key, container, run, notify }) {
+export async function mountChat({ api, key, container, run, notify, isAlive = () => true }) {
   let disposed = false, shown = null;
   container.innerHTML = `<h3 tabindex="-1">Tus conversaciones</h3><p id="connection" role="status"></p>
     <details><summary>Invitar o usar una invitación</summary>
@@ -14,6 +14,7 @@ export async function mountChat({ api, key, container, run, notify }) {
       <h3 id="room-title" tabindex="-1"></h3><p id="room-state" class="muted"></p><div id="room-actions" class="actions"></div>
       <section id="vote" aria-label="Votación"></section>
       <button id="older" class="secondary" hidden>Cargar mensajes anteriores</button>
+      <p id="history-limit" class="muted" hidden>Esta página conserva los 500 mensajes más recientes que ha consultado.</p>
       <ol id="messages" class="messages" aria-label="Mensajes"></ol>
       <form id="send-form"><label for="message-text">Mensaje</label><textarea id="message-text" rows="3" required aria-describedby="message-limit"></textarea>
         <small id="message-limit">Hasta 256 caracteres. El contenido se cifra en este dispositivo.</small><button class="primary" id="send-message">Enviar mensaje</button></form>
@@ -25,7 +26,8 @@ export async function mountChat({ api, key, container, run, notify }) {
     element.onclick = () => run(action); parent.append(element); return element;
   }
   function render() {
-    if (disposed || !container.isConnected) return;
+    if (disposed) return;
+    if (!container.isConnected || !isAlive()) { dispose(); return; }
     $('#connection').textContent = chat.ready ? 'Conectado · cifrado de extremo a extremo' : 'Reconectando… Puedes consultar el historial disponible.';
     const rooms = $('#rooms'); rooms.replaceChildren();
     [...chat.rooms.values()].forEach(room => {
@@ -65,7 +67,8 @@ export async function mountChat({ api, key, container, run, notify }) {
       }
       if (room.vote.my_vote !== null) { const p = document.createElement('p'); p.textContent = 'Tu voto: ' + (room.vote.my_vote ? 'conservar' : 'eliminar'); vote.append(p); }
     }
-    $('#older').hidden = !room.cursor || room.mode !== 'stored';
+    $('#older').hidden = !room.cursor || room.mode !== 'stored' || room.messages.size >= 500;
+    $('#history-limit').hidden = room.messages.size < 500;
     const messages = $('#messages'); messages.replaceChildren();
     for (const m of [...room.messages.values()].sort((a,b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id))) {
       const li = document.createElement('li'); li.className = m.own ? 'message own' : 'message';
@@ -97,6 +100,8 @@ export async function mountChat({ api, key, container, run, notify }) {
   $('#more-rooms').onclick = () => run(() => chat.list(true));
   $('#older').onclick = () => run(() => chat.refresh(chat.selected, true));
   $('#send-form').onsubmit = e => { e.preventDefault(); const text = $('#message-text').value; run(async () => { await chat.send(chat.selected, text); if (!disposed) $('#message-text').value = ''; }); };
-  try { await chat.start(); } catch (error) { chat.dispose(); throw error; }
-  return () => { disposed = true; chat.dispose(); container.replaceChildren(); };
+  function dispose() { disposed = true; chat.dispose(); container.replaceChildren(); }
+  try { await chat.start(); } catch (error) { dispose(); throw error; }
+  if (!isAlive() || !container.isConnected) dispose();
+  return dispose;
 }

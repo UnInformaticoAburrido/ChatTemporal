@@ -1,4 +1,5 @@
 import sodium from './vendor/sodium.js';
+import { encryptTransfer, decryptTransfer, transferObject } from './transfers.js';
 await sodium.ready;
 
 const encoder = new TextEncoder();
@@ -50,6 +51,28 @@ export class LocalKey {
   get unlocked() { return this.#secret !== null; }
   lock() { if (this.#secret) sodium.memzero(this.#secret); this.#secret = null; }
   #check() { if (!this.#secret) throw new KeyError('KEY_LOCKED'); }
+  sealTransfer(transferId) {
+    this.#check();
+    const bytes = encoder.encode(JSON.stringify({ format: 'chat-private-key', version: 1, user_id: this.#user,
+      public_key: this.#public, private_key: binary(this.#secret) }));
+    try { return encryptTransfer(transferId, bytes); }
+    finally { sodium.memzero(bytes); }
+  }
+  static fromTransfer(transferId, encryptedBlob, qr, user) {
+    const bytes = decryptTransfer(transferId, encryptedBlob, qr);
+    let secret;
+    try {
+      const data = transferObject(new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+        ['format', 'version', 'user_id', 'public_key', 'private_key'], 4096);
+      if (data.format !== 'chat-private-key' || data.version !== 1) throw new KeyError('KEY_FILE_INVALID');
+      account(data.user_id);
+      if (data.user_id !== user) throw new KeyError('KEY_ACCOUNT_MISMATCH');
+      secret = decode(data.private_key, 32);
+      const restored = new LocalKey(user, secret);
+      if (restored.publicKey !== data.public_key) { restored.lock(); throw new KeyError('KEY_MISMATCH'); }
+      return restored;
+    } finally { sodium.memzero(bytes); if (secret) sodium.memzero(secret); }
+  }
   async backup(password) {
     this.#check();
     const header = { format: 'chat-key-backup', version: 1, user_id: this.#user, public_key: this.#public,

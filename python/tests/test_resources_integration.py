@@ -223,3 +223,38 @@ def test_initial_key_precondition_is_atomic_and_never_rotates(resources_env: tup
             assert invalid.status_code == 400
             assert (await api.get(f'/api/v1/users/{users[0]}/keys')).json() == original
     asyncio.run(run())
+
+
+def test_conversation_key_preserves_anonymity_and_requires_live_membership(resources_env: tuple) -> None:
+    settings, users, sessions, conversations, tokens = resources_env
+    host_key, guest_key = KeyPair.generate(), KeyPair.generate()
+    path = f'/api/v1/conversations/{conversations[0]}/key'
+
+    async def run() -> None:
+        async with client_for(settings, tokens[0]) as host, client_for(settings, tokens[1]) as guest, \
+                client_for(settings, tokens[2]) as stranger:
+            assert (await host.get(path)).status_code == 404
+            await host.put('/api/v1/users/me/keys', json=key_body(host_key))
+            await guest.put('/api/v1/users/me/keys', json=key_body(guest_key))
+            for viewer, expected in ((host, guest_key), (guest, host_key)):
+                response = await viewer.get(path)
+                assert response.status_code == 200, response.text
+                assert set(response.json()) == {'public_key', 'protocol_version', 'updated_at'}
+                assert response.json()['public_key'] == key_body(expected)['public_key']
+                detail = await viewer.get(f'/api/v1/conversations/{conversations[0]}')
+                assert detail.json()['peer'] is None
+            for inaccessible in (path, f'/api/v1/conversations/{uuid4()}/key'):
+                response = await stranger.get(inaccessible)
+                assert response.status_code == 404 and response.json()['error']['code'] == 'USER_NOT_FOUND'
+            with psycopg.connect(read_secret('DATABASE_URL')) as db:
+                db.execute("UPDATE conversations SET status='closed' WHERE id=%s", (conversations[0],))
+            assert (await host.get(path)).status_code == 200  # Descifrar historial cerrado sigue permitido.
+            with psycopg.connect(read_secret('DATABASE_URL')) as db:
+                db.execute("UPDATE conversation_members SET membership_status='left' WHERE user_id=%s AND conversation_id=%s",
+                           (users[1], conversations[0]))
+            assert (await host.get(path)).status_code == 404
+            assert (await guest.get(path)).status_code == 404
+            with psycopg.connect(read_secret('DATABASE_URL')) as db:
+                db.execute("UPDATE auth_sessions SET revoked_at=clock_timestamp() WHERE id=%s", (sessions[0],))
+            assert (await host.get(path)).status_code == 401
+    asyncio.run(run())

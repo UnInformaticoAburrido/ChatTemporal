@@ -14,6 +14,8 @@ async function setup(page, { initial = null, race = false, lostReply = false } =
     if (path.endsWith('/recover')) return reply({ access_token: 'synthetic-access', refresh_token: 'synthetic-refresh', token_type: 'Bearer', expires_in: 86400 });
     if (path.endsWith('/users/me')) return reply(user);
     if (path.endsWith('/logout')) return route.fulfill({ status: 204 });
+    if (path.endsWith('/conversations')) return reply({ items: [], next_cursor: null });
+    if (path.endsWith('/ws-ticket')) return reply({ ticket: 'synthetic-ticket' });
     if (path.endsWith('/keys') && request.method() === 'GET') return remote ? reply(remote) : reply({ error: { code: 'USER_NOT_FOUND' } }, 404);
     if (path.endsWith('/keys') && request.method() === 'PUT') {
       const body = request.postDataJSON(); puts.push(body);

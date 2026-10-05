@@ -1,18 +1,22 @@
 # N9 · Homologación y release
 
-Continuación de N8, actualizada 2026-10-01. Fuentes normativas: §§22, 29 y 31.
-**En curso; no autoriza un despliegue de producción.** Completar la interfaz cliente,
-staging, proveedores reales y capacidad del host siguen siendo puertas pendientes.
+Continuación de N8, actualizada 2026-10-05. Fuentes normativas: §§22, 29 y 31.
+**En curso; no autoriza un despliegue de producción.** Integración con la aplicación
+principal, staging, proveedores reales y capacidad del host siguen pendientes.
 
 ## N9.1 · CI y cobertura
 
 `.github/workflows/quality.yml` ejecuta en push, pull_request y workflow_dispatch:
 
-- Cliente web: Node 24.21.0, lock npm auditado, pruebas de sesión/claves e interoperabilidad Python, bundle verificado y Chromium
-  escritorio/móvil con API interceptada. Caddy sirve los assets reales con
+- Cliente web: Node 24.21.0, lock npm auditado, pruebas de sesión/claves/chat/transferencias/Push e interoperabilidad Python, bundle verificado y Chromium
+  escritorio/móvil con REST/WebSocket interceptados. Caddy sirve los assets reales con
   cabeceras verificadas por el smoke HTTPS. Ver [alcance y pendientes](CLIENTE_WEB.md).
 
-- Ruff sobre aplicación, pruebas y scripts; mypy estricto sobre los 52 módulos
+- Job `web_e2e`: Chromium escritorio/viewport móvil con API/WS y PostgreSQL/Redis
+  reales nuevos, emisor bootstrap firmado y buzón SMTP de prueba. Recorridos,
+  aislamiento y límites documentados en [E2E_WEB.md](E2E_WEB.md).
+
+- Ruff sobre aplicación, pruebas y scripts; mypy estricto sobre los 53 módulos
   de aplicación/cliente; actionlint para el propio workflow.
 - Unitarias en Python 3.13.15 y pruebas de reglas Prometheus en la imagen fijada.
 - Configuración Alertmanager 0.34.1 y entrega/resolución por HTTP loopback, sin
@@ -105,20 +109,21 @@ cuotas entre ensayos; las pruebas de límites por IP mantienen sus IP explícita
 
 ## N9.3 · Matriz de aceptación §22
 
-La evidencia local usa API/WS y servicios reales; no equivale a E2E con UI y
-proveedores del despliegue. Los módulos citados están bajo `python/tests/`.
+La suite [E2E web](E2E_WEB.md) añade UI con API/WS y servicios reales; el buzón y
+la sesión del emisor son fixtures locales. No equivale a homologación con
+proveedores del despliegue. Los módulos backend citados están bajo `python/tests/`.
 
 | Criterio | Evidencia automatizada | Pendiente de staging/cliente |
 |---|---|---|
-| Registro, BIP-39, refresh y bootstrap | test_identity, test_identity_integration | SMTP real y experiencia de recuperación |
-| WS autenticado y stored/ephemeral | test_websocket_integration y test_proxy por Caddy HTTPS/WSS | Dominio/certificado público e interfaz |
+| Registro, BIP-39, refresh y bootstrap | test_identity, test_identity_integration, test_bootstrap_client; E2E web registra/verifica y consume bootstrap firmado entre dos orígenes | Conectar controlador/UUID de main-app y homologar SMTP, COOP y experiencia real |
+| WS autenticado y stored/ephemeral | test_websocket_integration, test_proxy por Caddy HTTPS/WSS y E2E web con reconexión real | Dominio/certificado público y staging con UI |
 | TTL, purga y pérdida de estado Redis | test_integration, test_persistence_integration, test_websocket_integration y reinicio real con test_container_lifecycle | Lag bajo carga y reinicio completo del host |
-| Invitaciones, host/guest, gracia y cierre | test_invitation_codes, test_conversations_integration | Recorrido E2E desde la UI |
-| Votación, abstención y retención de gracia | test_voting, test_voting_integration | Aplicación local del resultado ephemeral |
-| Upgrade irreversible e idempotencia | test_conversations_integration, test_websocket_integration | Cortes/reintentos en el cliente final |
-| Web Push genérico | test_push_integration y receptor HTTPS local | Recepción en navegador/proveedor real |
-| Transferencia cifrada y replay | test_recovery, test_recovery_integration | QR, persistencia segura del cliente y recuperación visual |
-| Layout de invitaciones y crypto_meta | test_invitation_codes, test_protocol | Interoperabilidad del cliente final |
+| Invitaciones, host/guest, gracia y cierre | test_invitation_codes, test_conversations_integration; E2E web cubre invitación/canje/aceptación | Cierre y recorrido completo en staging |
+| Votación, abstención y retención de gracia | test_voting, test_voting_integration y E2E web con plazo/resultados reales stored/ephemeral | Reloj y dispositivos finales en staging |
+| Upgrade irreversible e idempotencia | test_conversations_integration, test_websocket_integration; E2E web comprueba upgrade y mensajes futuros | Reintentos de respuesta perdida y cortes antes de ACK en UI con backend real |
+| Web Push genérico | test_push_integration y receptor HTTPS local; push.test/push.spec verifican UI y registro real del worker con proveedor simulado | Recepción en navegador/proveedor real y dispositivos finales |
+| Transferencia cifrada y replay | test_recovery, test_recovery_integration; E2E web con emisor firmado, permiso residual y borrado tras restauración | Emisor principal real, cámara física y replay E2E |
+| Layout de invitaciones y crypto_meta | test_invitation_codes, test_protocol, interop Python/web y cifrado real E2E | Dispositivos y navegadores finales |
 
 ## N9.4 · Carga y checklist de release
 
@@ -156,7 +161,7 @@ Checklist §31 todavía pendiente de evidencia del despliegue:
   [runbooks N8](../operations/README.md).
 
 No se modifican protecciones de rama ni se declara `main` lista para producción.
-El administrador debe requerir los tres jobs (`web`, `tests`, `security`) antes del merge.
+El administrador debe requerir los cuatro jobs (`web`, `web_e2e`, `tests`, `security`) antes del merge.
 Evidencia y comandos reproducibles en [VALIDACION.md](VALIDACION.md).
 
 `python scripts/test_startup_containers.py` reutiliza las imágenes ya construidas

@@ -1,5 +1,223 @@
 # Validación de la entrega
 
+## Instalador Bash para servidor Linux · 2026-10-05
+
+Creado `instalador-servidor/` y excluido por completo de Git. Las plantillas y
+`scripts/preparar_instalador.sh` están versionados para reconstruir el paquete
+después de clonar. El [README del instalador](../scripts/servidor/README.md)
+explica requisitos, comandos, datos externos y límites.
+
+El instalador prepara una instancia nueva: Docker/repositorio oficial en
+Debian/Ubuntu, claves independientes, permisos de los UID de cada imagen, dominio
+y HTTPS Caddy, SMTP TLS, observabilidad y journald, migración/arranque, systemd,
+backup cifrado y ensayo inicial/mensual. No necesita Python/Node del host. Un
+destino/proyecto/volumen/unidad existente provoca rechazo; un lock impide otra
+instalación simultánea. No sobrescribe claves ni ejecuta `down -v`. Usa solo
+archivos aptos para Git del checkout, sin copiar credenciales locales.
+
+Validación:
+
+- **13 pruebas nuevas correctas**: generación sin root/red/Docker; claves aceptadas
+  por `validate_secrets` en modo production; configuración SMTP/TLS y contraseña
+  fuera de YAML; permisos; backups internos sin socket Docker; origen/pública
+  main-app reales; rechazo de privada/URL/puerto inválidos; limpieza del intento
+  parcial; conservación de un destino existente y credenciales tratadas como
+  datos, sin evaluar sustituciones de comandos. Compose valida el conjunto y
+  confirma que solo Caddy publica puertos y cada consumidor usa la configuración
+  generada. Las unidades incluyen arranque del stack y timers de operaciones.
+- **198 unitarias correctas**, 101 integraciones excluidas. Ruff global, mypy en
+  53 módulos, actionlint, sintaxis Bash y `git diff --check` correctos.
+- Configuración generada aceptada por amtool 0.34.1. Unidades generadas aceptadas
+  por `systemd-analyze verify`; solo se verificaron, no se instalaron en el host.
+- **Dos integraciones reales correctas** con PostgreSQL/Redis temporales:
+  backup/restauración y exclusión de tablas TTL/futuras, más el trabajo de
+  backup/ensayo usando conexión directa y métricas, sin ejecutar Docker. Evidencia
+  en `/tmp/chat-persistence-test.Pdafix` y
+  `artifacts/n9/installer-backup-integration.log`; servicios detenidos al acabar.
+- La imagen `backup` reutiliza runtime y clientes PostgreSQL fijados sin instalar
+  dependencias de desarrollo. CI añade su build/escaneo y la sintaxis Bash;
+  se conserva el target `test` y el modo operativo host anterior.
+- Trivy no detecta secretos en los archivos preparados para Git. Comprobado que
+  el índice excluye el paquete generado, credenciales, `.env`, backups y artefactos.
+
+No se ejecutó el instalador completo ni se cambió este host. Necesita servidor
+Linux/systemd, dominio/DNS, firewall del proveedor y SMTP reales; esas cuentas
+externas no pueden inventarse. La comprobación SMTP del instalador no envía correo
+y la comprobación HTTPS solo declara éxito tras validar el certificado local.
+La imagen de backup, instalación de paquetes, permisos con contenedores,
+certificado ACME, reinicio, correo/alertas y backups representativos quedan para
+CI y staging. Los comandos no certifican N9 ni configuran custodia remota sin
+un destino proporcionado.
+
+## UI con API/WS y dependencias reales · 2026-10-05
+
+Añadida una suite opt-in, independiente de las pruebas de UI interceptada, que
+abre Chromium contra FastAPI y WebSocket reales con PostgreSQL/Redis vacíos.
+Comandos, aislamiento y límites en [E2E_WEB.md](E2E_WEB.md).
+
+Validación de este incremento:
+
+- **6 recorridos de navegador correctos**, tres en escritorio y tres con viewport
+  Pixel 7: stored (registro/verificación, claves, invitación, ACK, gracia conservada,
+  reconexión, historial y purga); ephemeral (offer/ready, ACK sin ciphertext durable,
+  abstención/rechazo de gracia y upgrade); dos contextos (bootstrap Ed25519 real,
+  sesión anterior revocada, permiso residual, transferencia y borrado tras restaurar).
+  No se intercepta REST ni WS. Se espera el plazo normativo de 30 s de votación y
+  se mantienen las cuotas autenticadas; no hubo 429 en la ejecución final.
+- El inspector comprueba estados persistidos, ciphertext/meta sin los marcadores
+  de plaintext y una sola sesión normal. El secreto de transferencia no se envía
+  a la API y el blob permanece hasta reabrir la copia descargada. Sin pageerror,
+  traces, capturas, vídeos ni snapshots conservados.
+- Test Python que coordina la suite: **1 correcto en 173,43 s**. Evidencia local en
+  `artifacts/n9/web-e2e-local.log` y `/tmp/chat-persistence-test.FZrj6G`;
+  PostgreSQL y Redis detenidos al terminar. Entorno local: Python 3.14.4,
+  Node 22.22.1, Playwright 1.63.0, PostgreSQL 18.6 y Redis 8.0.5.
+- Suite Python unitaria completa: **185 correctas, 100 de integración excluidas**.
+  Seis nuevas comprueban aislamiento del runner: solo dependencias nuevas y
+  volátiles, imágenes fijadas, montajes privados/BD y puertos loopback válidos.
+- Ruff global, mypy en 53 módulos, actionlint, sintaxis de los dos módulos JS y
+  `git diff --check` correctos. Compose valida la configuración generada.
+  Añadidos `make test-web-e2e` y job CI `web_e2e`, sin nuevas dependencias o migraciones.
+
+No se ha ejecutado aquí el runner Docker: el usuario no tiene acceso al socket
+del daemon. Su ejecución con las imágenes fijadas (PostgreSQL 17.11 y Redis 8.6.6)
+y el SHA publicado queda para CI; no se declara ese job verde. La comprobación
+funcional local sí usa servicios reales aislados, mediante el runner Unix.
+
+Mailbox sustituye el transporte SMTP y la sesión del emisor principal es una
+fixture local. Se adelanta únicamente la caducidad de un mensaje sintético para
+comprobar la purga y se vuelve a consultar el historial; el resto del ciclo es
+real. Esta suite usa HTTP loopback sin lifespan de producción y entrada manual
+de transferencia: Caddy TLS/arranque siguen en sus smokes separados. Main-app
+real, SMTP/Push externos, cámara física, dispositivos finales, carga y staging
+permanecen pendientes de N9.
+
+## Adaptador de acceso desde main-app · 2026-10-05
+
+Implementados emisor BootstrapIssuer Ed25519, launcher autónomo de main-app y
+receptor web entre ventanas con origen/source/nonce/campos comprobados. Apertura
+por gesto, token solo en memoria, consumo único sin reintento y formulario manual
+ante fallos. Configuración `bootstrap_web_origins` separada de CORS y apagada por
+defecto; producción rechaza HTTP. GET público entrega únicamente lista/version.
+No se modifica otra aplicación ni se monta su privada en Chat API.
+
+Validación de este incremento:
+
+- Suite Node completa: 50 pruebas correctas, cinco nuevas del protocolo bootstrap.
+  Incluyen origen/source incorrectos, nonce, campos/tamaños, timeout, duplicados,
+  popups bloqueados y emisión que termina después de cancelar.
+- Suite Chromium completa: 54 recorridos correctos en escritorio y viewport móvil.
+  Doce nuevos usan dos orígenes locales y ventanas reales, con API/emisor
+  interceptados: acceso y separación de opener, otra ventana del mismo origen,
+  configuración tardía/cancelación, respuesta perdida, perfil caído y secretos
+  fuera de URL/DOM/storage. No constituyen E2E con main-app/SMTP reales.
+- Suite Python unitaria completa: 179 correctas, 99 de integración excluidas.
+  Dieciséis nuevas validan firma interoperable, jti distintos, TTL/UUID/kid,
+  errores sin secretos, origen canónico y rechazo de HTTP en producción.
+- Dos integraciones reales correctas con PostgreSQL/Redis aislados: emisor de
+  main-app, metadata pública/no-store, exchange, consumo único concurrente/jti y
+  revocación del predecesor. Evidencias en `/tmp/chat-persistence-test.QWNCzx`;
+  servicios detenidos al terminar.
+- Ruff sobre Python/scripts/operations/interop, mypy en 53 módulos y
+  `git diff --check` correctos. Sin dependencias o migraciones nuevas.
+
+CI incluye los módulos/pruebas por sus rutas existentes; el smoke Caddy añade
+bootstrap.js y verifica que fixtures/adaptador externo no se sirvan como assets.
+Ese smoke HTTPS y las imágenes exactas quedan para CI. Pendiente conectar sesión,
+CSRF, mapeo de UUID y origen de la aplicación principal real; también homologación
+COOP/popups, proveedores/dispositivos/carga y staging. Contrato y pasos en
+[INTEGRACION_MAIN_APP.md](INTEGRACION_MAIN_APP.md).
+
+## Notificaciones web · 2026-10-05
+
+Implementados panel de activación/baja voluntaria, permiso por gesto, service
+worker local con texto fijo y enfoque sin recargar, limpieza local al cerrar
+sesión y conciliación de alta/baja de respuesta perdida. Añadidos GET autenticados
+de pública VAPID y suscripciones activas de la sesión, sin secretos de transporte.
+No hay nueva migración ni dependencias. Los incrementos anteriores se conservan.
+
+Validación:
+
+- Suite Node completa: 45 pruebas correctas, incluidas 10 de Push, privacidad,
+  formato, permiso denegado, cambio de VAPID, alta/baja inciertas y limpieza de
+  operaciones que terminan después de abandonar la pantalla.
+- Suite Chromium completa: 42 recorridos correctos en escritorio y viewport móvil.
+  Ocho de Push registran/activan el worker real bajo CSP y simulan proveedor/REST:
+  permiso voluntario/denegado, logout, POST/DELETE perdidos y conflicto de cuenta.
+  No se crearon caches ni se guardaron credenciales en storage.
+- Siete integraciones Push correctas con PostgreSQL/Redis aislados: propiedad,
+  validación, configuración pública/no-store/auth, aislamiento de sesión/usuario,
+  reintentos, 404/410, ofertas offline y exclusión del dispositivo sustituido.
+  Receptor HTTPS local verifica VAPID y descifra el payload; no hay entregas externas.
+  Evidencias en `/tmp/chat-persistence-test.iutE37`; servicios detenidos al terminar.
+- Ruff sobre Python/scripts/operations/interop, mypy estricto en 52 módulos y
+  `git diff --check` correctos.
+
+El smoke Caddy HTTPS incorpora assets y cabeceras del worker para CI; no se afirma
+haberlo ejecutado en este incremento. Proveedores SMTP/Push reales, cámaras/SO
+finales, emisor/app principal, staging y carga siguen pendientes. Detalles en
+[PUSH_WEB.md](PUSH_WEB.md) y [N9](N9_HOMOLOGACION_RELEASE.md).
+
+## Transferencias de claves web · 2026-10-01
+
+Añadidos acceso bootstrap manual, preparación del dispositivo anterior,
+solicitud/QR privado, generación y lectura local de QR, cifrado XChaCha compatible
+con Python, y recepción con copia .chatkey obligatoria antes del borrado remoto.
+Los cambios de conversaciones descritos abajo se conservan. Sin migraciones nuevas.
+
+Validación de este incremento:
+
+- 35 pruebas Node correctas, incluida interoperabilidad de mensajes y transferencias
+  con Python, UUID/AAD, adulteración, límites, cuenta/pública y QR duplicados.
+- Suite completa Chromium: 34 recorridos correctos (17 escenarios escritorio/móvil).
+  Ocho corresponden a transferencias: dos páginas con access distintos, QR por
+  imagen, archivo descargado/abierto, subida/borrado de respuesta perdida, cámara
+  denegada, cancelación y permisos de cámara tardíos tras pagehide.
+- 15 unitarias del protocolo Python de recuperación correctas.
+- Tres integraciones reales de transferencias: permisos del dispositivo sustituido,
+  aislamiento/carga única/TTL/DELETE y revocación por nuevo acceso/caducidad.
+  PostgreSQL/Redis aislados en `/tmp/chat-persistence-test.yo3mMx`, detenidos al terminar.
+- Ruff, bundle sodium/QR contra lock y diff correctos. La instalación npm auditó
+  38 paquetes sin vulnerabilidades detectadas. No se repiten auditorías de imágenes.
+
+Las páginas de navegador interceptan REST/WS con datos sintéticos. La lectura de
+imágenes QR es real; cámara física, emisor bootstrap, SMTP/Push y E2E integrado
+siguen pendientes de homologación. No se enviaron datos a servicios de QR.
+El bundle QR, sus licencias y las rutas de assets entran en CI; el smoke Caddy
+HTTPS queda para esa ejecución. Alcance en [TRANSFERENCIAS_WEB.md](TRANSFERENCIAS_WEB.md).
+
+## Conversaciones y mensajería web · 2026-10-01
+
+Se completa y revisa el incremento iniciado en `340c73c`: invitaciones, listado,
+canje, aceptación, envío cifrado stored/ephemeral, estados y reintentos, reconexión,
+historial, voto de gracia, cierre/salida/upgrade y replay local inicial.
+Se corrigen paginación reiniciada por polling, resultados atrasados, salida dudosa,
+reintroducción de gracia y limpieza tras bloqueo/revocación. El límite de 500
+mensajes consultados se muestra en la UI. No requiere nuevas migraciones.
+
+Validación local:
+
+- 29 pruebas Node de sesiones, claves y transporte, con interop Python real.
+- 26 recorridos Chromium: 13 escenarios en escritorio y móvil; REST/WebSocket
+  interceptados con datos sintéticos. Incluyen cifrado, ACK, corrupción, corte y
+  ticket nuevo, mismo payload al reintentar, permisos, votación y limpieza de textos.
+- 27 integraciones seleccionadas de recursos/votaciones con PostgreSQL 18.6 y
+  Redis locales aislados por sockets Unix: anonimato pending, públicas por
+  conversación, pertenencia, voto personalizado, resolución y revocación.
+  Evidencia: `/tmp/chat-persistence-test.j6xhMH`; servicios detenidos al terminar.
+- 163 unitarias Python correctas; 98 integraciones excluidas de esa ejecución.
+  Python local 3.14.4; no sustituye el ensayo de imágenes fijadas en CI.
+- Ruff, mypy estricto (52 módulos), comparación del bundle criptográfico con
+  el lock y `git diff --check` correctos. Smoke Caddy ampliado con chat.js/chat-ui.js;
+  su ejecución HTTPS de esta entrega queda para CI.
+
+Las restricciones iniciales del sandbox bloquearon sockets y procesos auxiliares;
+los ensayos se completaron fuera de esas restricciones. No se enviaron correos,
+Push ni mensajes a terceros, y no se tocaron bases existentes.
+La cobertura combinada, auditorías y CI del commit final no se han repetido aquí.
+Transferencia QR, Push web, E2E UI/backend con proveedores reales y capacidad en
+staging siguen pendientes. Ver [CLIENTE_WEB.md](CLIENTE_WEB.md).
+
 ## Claves del cliente web · 2026-10-01
 
 Base `9ae0d6c`: [CI completa verde](https://github.com/UnInformaticoAburrido/ChatTemporal/actions/runs/36598209657),

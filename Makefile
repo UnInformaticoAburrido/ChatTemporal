@@ -1,4 +1,4 @@
-.PHONY: init config up start stop down logs test check coverage-check
+.PHONY: init config up start stop down logs test test-web-e2e check coverage-check
 LOCAL = docker compose -f docker-compose.yml -f docker-compose.local.yml
 
 init:
@@ -27,6 +27,10 @@ logs:
 
 test:
 	cd python && python -m pytest -m 'not integration'
+
+# Ejecutar con el Python que tiene requirements-dev.lock instalado.
+test-web-e2e:
+	python scripts/test_web_containers.py
 
 check:
 	cd python && ruff check --config pyproject.toml . ../scripts ../operations ../web/tests/interop.py && mypy chat chat_client

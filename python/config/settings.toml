@@ -9,6 +9,9 @@ email_from = "chat@example.invalid"
 access_token_ttl_seconds = 86400
 refresh_token_ttl_seconds = 2592000
 bootstrap_max_ttl_seconds = 300
+# DEC-111: acceso web automático apagado hasta declarar orígenes de main-app.
+# No reutilizar allowed_origins/CORS. Producción exige HTTPS y origen sin ruta.
+bootstrap_web_origins = []
 ws_ticket_ttl_seconds = 30
 ephemeral_offer_timeout_seconds = 60
 ephemeral_delivery_timeout_seconds = 60

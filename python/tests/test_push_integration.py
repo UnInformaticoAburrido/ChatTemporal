@@ -47,16 +47,26 @@ def test_push_subscription_upsert_ownership_revocation_and_validation(n4: tuple)
 
     async def run() -> None:
         async with client(settings, tokens[0]) as owner, client(settings, tokens[1]) as outsider:
+            config = await owner.get("/api/v1/push/config")
+            assert config.status_code == 200
+            assert config.json() == {"vapid_public_key": settings.vapid_public_key}
+            assert config.headers["cache-control"] == "no-store"
+            assert (await owner.get("/api/v1/push/config", headers={"Authorization": ""})).status_code == 401
+            assert (await owner.get("/api/v1/push/subscriptions")).json() == {"items": []}
             data = subscription()
             first = await owner.post("/api/v1/push/subscriptions", json=data)
             assert first.status_code == 201, first.text
             identifier = first.json()["id"]
+            assert (await owner.get("/api/v1/push/subscriptions")).json() == {
+                "items": [{"id": identifier, "endpoint": data["endpoint"]}]}
+            assert (await outsider.get("/api/v1/push/subscriptions")).json() == {"items": []}
             data["auth_secret"] = encode_binary(b"b" * 16)
             assert (await owner.post("/api/v1/push/subscriptions", json=data)).json() == first.json()
             assert (await outsider.post("/api/v1/push/subscriptions", json=data)).status_code == 409
             path = f"/api/v1/push/subscriptions/{identifier}"
             assert (await outsider.delete(path)).status_code == 404
             assert (await owner.delete(path)).status_code == 204
+            assert (await owner.get("/api/v1/push/subscriptions")).json() == {"items": []}
             assert (await owner.delete(path)).status_code == 204
             assert (await owner.post("/api/v1/push/subscriptions", json=data)).json() == first.json()
             for field, value in (("endpoint", "https://127.0.0.1/secrets"), ("p256dh", encode_binary(b"x" * 65)),
@@ -177,9 +187,15 @@ def test_push_does_not_reach_previous_session_after_exchange(n4: tuple, monkeypa
             a, b = await open_socket(stack, url, guest), await open_socket(stack, url, host)
             await a.send(json.dumps(sending(conversation)))
             await received(b, "message.new")
-            assert (await host.post("/api/v1/auth/exchange", json={"bootstrap_token": bootstrap(users[0])})).status_code == 200
-            await push_once(settings)
-            assert calls == []
+            exchanged = await host.post("/api/v1/auth/exchange", json={"bootstrap_token": bootstrap(users[0])})
+            assert exchanged.status_code == 200
+            assert (await host.get("/api/v1/push/config")).status_code == 401
+            async with client(settings, exchanged.json()["access_token"]) as replacement:
+                assert (await replacement.get("/api/v1/push/subscriptions")).json() == {"items": []}
+                await push_once(settings)
+                assert calls == []
+                assert (await replacement.post("/api/v1/push/subscriptions", json=subscription())).status_code == 201
+                assert len((await replacement.get("/api/v1/push/subscriptions")).json()["items"]) == 1
     asyncio.run(run())
 
 

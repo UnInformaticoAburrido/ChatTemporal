@@ -1,5 +1,12 @@
 # Operación de N8
 
+Para una instalación nueva existe un [instalador Bash](../scripts/servidor/README.md)
+que genera el paquete ignorado con `bash scripts/preparar_instalador.sh`. Automatiza
+la configuración del servidor y usa un contenedor de backup sin socket Docker;
+sus unidades sustituyen la necesidad de la venv/cliente PG del host descrita abajo.
+No actualizar una instalación existente con ese instalador. Los procedimientos
+de recuperación, rotación, custodia y aceptación siguen aplicando.
+
 Implementación comprobada localmente; **no es una homologación del host de
 producción**. No ejecutar los cambios de sistema en un equipo de desarrollo.
 Las rutas de las unidades son `/opt/chat`: adaptarlas juntas si el checkout de

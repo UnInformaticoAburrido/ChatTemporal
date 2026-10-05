@@ -46,9 +46,38 @@ class SubscriptionID(StrictDTO):
     id: CanonicalUUID
 
 
+class PushConfig(StrictDTO):
+    vapid_public_key: str
+
+
+class CurrentSubscription(SubscriptionID):
+    endpoint: str = Field(repr=False)
+
+
+class CurrentSubscriptions(StrictDTO):
+    items: list[CurrentSubscription]
+
+
 def push_router(identity: Identity, settings: Settings) -> APIRouter:
     router = APIRouter(prefix=settings.api_prefix)
     Member = Annotated[Principal, Depends(Authenticated(identity, settings))]
+
+    @router.get("/push/config")
+    async def config(principal: Member) -> PushConfig:
+        return PushConfig(vapid_public_key=settings.vapid_public_key)
+
+    @router.get("/push/subscriptions")
+    async def current(principal: Member) -> CurrentSubscriptions:
+        async with transaction() as unit:
+            await IdentityStore(unit.connection).authenticated(principal.user.id, principal.sid, lock=True)
+            rows = await (await unit.connection.execute("""SELECT id,endpoint FROM web_push_subscriptions
+                WHERE user_id=%s AND session_id=%s AND revoked_at IS NULL ORDER BY id""",
+                (principal.user.id, principal.sid))).fetchall()
+        items = []
+        for row in rows:
+            assert isinstance(row[0], UUID) and isinstance(row[1], str)
+            items.append(CurrentSubscription(id=row[0], endpoint=row[1]))
+        return CurrentSubscriptions(items=items)
 
     @router.post("/push/subscriptions", status_code=201)
     async def subscribe(data: Subscription, principal: Member) -> SubscriptionID:

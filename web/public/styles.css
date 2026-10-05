@@ -502,3 +502,5 @@ body:has(#chat-panel) .intro { display: none; }
 .message.own { background: #edf5e9; margin: 12px 0 12px 15%; }
 .message p { white-space: pre-wrap; margin: 0; }
 [hidden] { display: none !important; }
+.qr-code { display: block; max-width: 100%; height: auto; margin: 16px auto; }
+.qr-scanner video { display: block; max-width: 100%; margin-top: 12px; }

@@ -166,3 +166,35 @@ test('consulta propia distingue ausencia de caída y publicación usa precondici
   assert.equal(sent.options.headers['If-None-Match'], '*');
   assert.deepEqual(JSON.parse(sent.options.body), { public_key: 'public', protocol_version: 1 });
 });
+
+test('exchange instala la sesión y habilita recepción; recover no concede permiso de handoff', async () => {
+  const calls = [];
+  const api = new ChatApi(async (path, options) => { calls.push({ path, options }); return response(tokens()); });
+  await api.exchange('synthetic-bootstrap');
+  assert.equal(api.canReceiveHandoff, true);
+  assert.deepEqual(JSON.parse(calls[0].options.body), { bootstrap_token: 'synthetic-bootstrap' });
+  assert.ok(!calls[0].options.headers.Authorization);
+  await api.recover('ana@example.com', 'phrase');
+  assert.equal(api.canReceiveHandoff, false);
+});
+
+test('subida preparada conserva solo access original, no refresh; clear y caducidad la invalidan', async () => {
+  let now = 0;
+  const calls = [];
+  const api = new ChatApi(async (path, options) => { calls.push({ path, options });
+    if (path.endsWith('/recover')) return response(tokens());
+    return new Response(null, { status: 204 });
+  }, () => now);
+  await api.recover('ana@example.com', 'phrase');
+  const uploader = await api.prepareUploader();
+  now = 40000;
+  await uploader.upload('id', 'encrypted');
+  assert.equal(calls.at(-1).options.method, 'PUT');
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body), { encrypted_blob: 'encrypted' });
+  assert.equal(calls.at(-1).options.headers.Authorization, 'Bearer access-first');
+  assert.equal(calls.some(call => call.path.endsWith('/refresh')), false);
+  now = 60000;
+  await assert.rejects(uploader.upload('id', 'encrypted'), { code: 'TRANSFER_ACCESS_EXPIRED' });
+  api.clear();
+  await assert.rejects(uploader.upload('id', 'encrypted'), { code: 'TRANSFER_ACCESS_EXPIRED' });
+});

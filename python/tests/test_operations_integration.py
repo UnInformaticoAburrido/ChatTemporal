@@ -3,6 +3,8 @@ import contextlib
 import os
 import signal
 import socket
+import subprocess
+import sys
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -88,6 +90,30 @@ def test_dependency_metrics_against_real_services(n4: tuple) -> None:
     assert DEPENDENCY.labels("redis")._value.get() == 1
     assert REDIS_MEMORY._value.get() > 0
     assert PG_LIMIT._value.get() > 0
+
+
+def test_backup_job_direct_connection_runs_backup_and_drill_without_docker(n4: tuple, tmp_path: Path, monkeypatch) -> None:
+    key = tmp_path / "backup.key"
+    key.write_bytes(os.urandom(32))
+    key.chmod(0o600)
+    monkeypatch.setenv("CHAT_BACKUP_DIRECT_DSN", "1")
+    monkeypatch.setenv("CHAT_BACKUP_KEY_FILE", str(key))
+    monkeypatch.setenv("CHAT_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setenv("CHAT_BACKUP_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.setenv("CHAT_PG_BIN", os.environ["CHAT_TEST_PG_BIN"])
+    monkeypatch.setenv("CHAT_RESTORE_TMP", str(tmp_path))
+    dsn = read_secret("DATABASE_URL")
+    with psycopg.connect(dsn) as db:
+        before = db.execute("SELECT datname FROM pg_database WHERE datname LIKE 'chat_restore_%'").fetchall()
+    script = Path(__file__).resolve().parents[2] / "operations/backup_job.py"
+    for action in ("backup", "drill"):
+        result = subprocess.run([sys.executable, str(script), action], capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0, "El trabajo aislado de backup/restore debe completar"
+        metric = "chat_backup" if action == "backup" else "chat_restore_drill"
+        assert (tmp_path / f"metrics/{metric}.prom").is_file()
+    assert len(list((tmp_path / "backups").glob("*.chatbak"))) == 1
+    with psycopg.connect(dsn) as db:
+        assert db.execute("SELECT datname FROM pg_database WHERE datname LIKE 'chat_restore_%'").fetchall() == before
 
 
 @pytest.mark.parametrize("mode", ["stored", "ephemeral"])
