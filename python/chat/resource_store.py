@@ -96,6 +96,16 @@ class ResourceStore:
             await cursor.execute(CONVERSATION_SELECT + " AND c.id=%s", (viewer, conversation))
             return await cursor.fetchone()
 
+    async def conversation_key(self, viewer: UUID, conversation: UUID) -> KeyRecord | None:
+        async with self.connection.cursor(row_factory=class_row(KeyRecord)) as cursor:
+            await cursor.execute("""SELECT k.public_key,k.protocol_version,k.updated_at
+                FROM conversation_members me JOIN conversation_members peer
+                  ON peer.conversation_id=me.conversation_id AND peer.user_id<>me.user_id
+                JOIN user_keys k ON k.user_id=peer.user_id JOIN users u ON u.id=peer.user_id AND u.is_active
+                WHERE me.user_id=%s AND me.conversation_id=%s AND me.membership_status<>'left'
+                  AND peer.membership_status<>'left'""", (viewer, conversation))
+            return await cursor.fetchone()
+
     async def conversations(self, viewer: UUID, limit: int, before: Position | None) -> list[ConversationRecord]:
         async with self.connection.cursor(row_factory=class_row(ConversationRecord)) as cursor:
             await cursor.execute(

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request
 
 from chat.auth_dependency import Authenticated
 from chat.config import Settings
+from chat.errors import APIError
 from chat.identity import Identity, Principal
 from chat.messaging import Messaging
 from chat.pagination import pagination
@@ -23,8 +24,11 @@ def resource_router(identity: Identity, settings: Settings) -> APIRouter:
         return await Messaging(settings).status(principal, message_id)
 
     @router.put("/users/me/keys")
-    async def put_key(data: PublicKeyInput, principal: PrincipalDependency) -> PublicKey:
-        return await service.replace_key(principal, data)
+    async def put_key(data: PublicKeyInput, request: Request, principal: PrincipalDependency) -> PublicKey:
+        condition = request.headers.get("if-none-match")
+        if condition not in (None, "*"):
+            raise APIError("INVALID_PRECONDITION", 400, "Only If-None-Match: * is supported.")
+        return await service.replace_key(principal, data, only_if_absent=condition == "*")
 
     @router.post("/users/me/keys/rotate")
     async def rotate_key(data: PublicKeyInput, principal: PrincipalDependency) -> PublicKey:
@@ -41,6 +45,10 @@ def resource_router(identity: Identity, settings: Settings) -> APIRouter:
     @router.get("/conversations/{conversation_id}")
     async def conversation(conversation_id: CanonicalUUID, principal: PrincipalDependency) -> ConversationSummary:
         return await service.conversation(principal, conversation_id)
+
+    @router.get("/conversations/{conversation_id}/key")
+    async def conversation_key(conversation_id: CanonicalUUID, principal: PrincipalDependency) -> PublicKey:
+        return await service.conversation_key(principal, conversation_id)
 
     @router.get("/conversations/{conversation_id}/messages")
     async def history(conversation_id: CanonicalUUID, request: Request,

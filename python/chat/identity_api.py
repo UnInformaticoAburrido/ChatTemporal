@@ -10,6 +10,7 @@ from chat.errors import APIError, unavailable
 from chat.identity import Identity, Principal
 from chat.identity_crypto import canonical_uuid
 from chat.identity_dto import (
+    BootstrapWebConfig,
     Exchange,
     ProfileUpdate,
     Recovery,
@@ -30,6 +31,11 @@ def identity_router(identity: Identity, settings: Settings) -> APIRouter:
     rates = settings.rate_limits
 
     Authenticated = Annotated[Principal, Depends(AuthDependency(identity, settings))]
+
+    @router.get("/auth/bootstrap-config")
+    async def bootstrap_config() -> BootstrapWebConfig:
+        # Metadata pública; lista distinta de CORS y vacía hasta configurar main-app.
+        return BootstrapWebConfig(origins=settings.bootstrap_web_origins)
 
     @router.post("/users/register", status_code=201)
     async def register(data: Registration, request: Request) -> Registered:

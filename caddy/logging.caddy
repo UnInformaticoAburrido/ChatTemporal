@@ -4,8 +4,9 @@ log default {
 	format filter {
 		wrap json
 		fields {
-			request>uri delete
-			request>headers delete
+			request delete
+			msg delete
+			error delete
 			resp_headers delete
 		}
 	}

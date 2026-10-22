@@ -22,6 +22,10 @@ def vote_router(identity: Identity, settings: Settings) -> APIRouter:
     service = Voting()
     Member = Annotated[Principal, Depends(Authenticated(identity, settings))]
 
+    @router.get("/conversations/{conversation_id}/vote")
+    async def current_vote(conversation_id: CanonicalUUID, principal: Member) -> VoteSnapshot | None:
+        return await service.current(principal, conversation_id)
+
     @router.get("/votes/{vote_id}")
     async def vote(vote_id: CanonicalUUID, principal: Member) -> VoteSnapshot:
         return await service.get(principal, vote_id)

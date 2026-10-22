@@ -5,6 +5,7 @@ from uuid import UUID
 from redis.exceptions import RedisError
 
 from chat.conversation_dto import VoteSnapshot
+from chat.conversation_store import ConversationStore
 from chat.errors import APIError, unavailable
 from chat.identity import Principal
 from chat.identity_store import IdentityStore
@@ -26,6 +27,18 @@ async def publish_votes(events: VoteEvents) -> None:
 
 
 class Voting:
+    async def current(self, principal: Principal, conversation: UUID) -> VoteSnapshot | None:
+        async with transaction() as unit:
+            await IdentityStore(unit.connection).authenticated(principal.user.id, principal.sid)
+            await ConversationStore(unit.connection).lock(principal.user.id, conversation)
+            row = await (await unit.connection.execute(
+                "SELECT id FROM votes WHERE conversation_id=%s ORDER BY created_at DESC,id DESC LIMIT 1",
+                (conversation,))).fetchone()
+        if row is None:
+            return None
+        assert isinstance(row[0], UUID)
+        return await self.get(principal, row[0])
+
     async def get(self, principal: Principal, identifier: UUID) -> VoteSnapshot:
         return await self._access(principal, identifier)
 

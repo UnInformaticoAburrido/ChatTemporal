@@ -202,3 +202,59 @@ def test_encrypted_history_pagination_expiry_mode_and_membership(resources_env: 
     asyncio.run(run())
     logs = capsys.readouterr().out
     assert all(value not in logs for value in sensitive)
+
+
+def test_initial_key_precondition_is_atomic_and_never_rotates(resources_env: tuple) -> None:
+    settings, users, _, _, tokens = resources_env
+    bodies = [key_body(KeyPair.generate()) for _ in range(4)]
+
+    async def run() -> None:
+        async with client_for(settings, tokens[0]) as api:
+            responses = await asyncio.gather(*(api.put('/api/v1/users/me/keys', json=body,
+                headers={'If-None-Match': '*'}) for body in bodies))
+            assert sorted(response.status_code for response in responses) == [200, 412, 412, 412]
+            winner = next(response.json() for response in responses if response.status_code == 200)
+            original = (await api.get(f'/api/v1/users/{users[0]}/keys')).json()
+            assert original == winner
+            retry = await api.put('/api/v1/users/me/keys', json={key: winner[key]
+                for key in ('public_key', 'protocol_version')}, headers={'If-None-Match': '*'})
+            assert retry.status_code == 412 and retry.json()['error']['code'] == 'KEY_ALREADY_EXISTS'
+            invalid = await api.put('/api/v1/users/me/keys', json=bodies[0], headers={'If-None-Match': 'invalid'})
+            assert invalid.status_code == 400
+            assert (await api.get(f'/api/v1/users/{users[0]}/keys')).json() == original
+    asyncio.run(run())
+
+
+def test_conversation_key_preserves_anonymity_and_requires_live_membership(resources_env: tuple) -> None:
+    settings, users, sessions, conversations, tokens = resources_env
+    host_key, guest_key = KeyPair.generate(), KeyPair.generate()
+    path = f'/api/v1/conversations/{conversations[0]}/key'
+
+    async def run() -> None:
+        async with client_for(settings, tokens[0]) as host, client_for(settings, tokens[1]) as guest, \
+                client_for(settings, tokens[2]) as stranger:
+            assert (await host.get(path)).status_code == 404
+            await host.put('/api/v1/users/me/keys', json=key_body(host_key))
+            await guest.put('/api/v1/users/me/keys', json=key_body(guest_key))
+            for viewer, expected in ((host, guest_key), (guest, host_key)):
+                response = await viewer.get(path)
+                assert response.status_code == 200, response.text
+                assert set(response.json()) == {'public_key', 'protocol_version', 'updated_at'}
+                assert response.json()['public_key'] == key_body(expected)['public_key']
+                detail = await viewer.get(f'/api/v1/conversations/{conversations[0]}')
+                assert detail.json()['peer'] is None
+            for inaccessible in (path, f'/api/v1/conversations/{uuid4()}/key'):
+                response = await stranger.get(inaccessible)
+                assert response.status_code == 404 and response.json()['error']['code'] == 'USER_NOT_FOUND'
+            with psycopg.connect(read_secret('DATABASE_URL')) as db:
+                db.execute("UPDATE conversations SET status='closed' WHERE id=%s", (conversations[0],))
+            assert (await host.get(path)).status_code == 200  # Descifrar historial cerrado sigue permitido.
+            with psycopg.connect(read_secret('DATABASE_URL')) as db:
+                db.execute("UPDATE conversation_members SET membership_status='left' WHERE user_id=%s AND conversation_id=%s",
+                           (users[1], conversations[0]))
+            assert (await host.get(path)).status_code == 404
+            assert (await guest.get(path)).status_code == 404
+            with psycopg.connect(read_secret('DATABASE_URL')) as db:
+                db.execute("UPDATE auth_sessions SET revoked_at=clock_timestamp() WHERE id=%s", (sessions[0],))
+            assert (await host.get(path)).status_code == 401
+    asyncio.run(run())

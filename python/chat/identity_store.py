@@ -48,15 +48,34 @@ class IdentityStore:
             await cursor.execute("SELECT * FROM users WHERE email=%s FOR UPDATE", (email,))
             return await cursor.fetchone()
 
-    async def authenticated(self, user_id: UUID, sid: UUID, *, lock: bool = False) -> User:
+    async def authenticated(self, user_id: UUID, sid: UUID, *, lock: bool = False,
+                            transfer_upload: bool = False) -> User:
         user = await self.user(user_id, lock=lock)
         valid = await (await self.connection.execute(
             """SELECT 1 FROM auth_sessions WHERE id=%s AND user_id=%s
             AND revoked_at IS NULL AND expires_at>clock_timestamp()""", (sid, user_id),
         )).fetchone()
+        if not valid and transfer_upload:
+            valid = await (await self.connection.execute("""SELECT 1 FROM transfer_upload_grants g
+                JOIN auth_sessions target ON target.id=g.target_sid
+                WHERE g.user_id=%s AND g.source_sid=%s AND g.expires_at>clock_timestamp()
+                AND target.revoked_at IS NULL AND target.expires_at>clock_timestamp()""", (user_id, sid))).fetchone()
         if user is None or not user.is_active or not valid:
             raise APIError("SESSION_REVOKED", 401, "Session revoked or expired.")
         return user
+
+    async def transfer_predecessor(self, user_id: UUID) -> UUID | None:
+        row = await (await self.connection.execute("""SELECT id FROM auth_sessions
+            WHERE user_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp()
+            ORDER BY created_at DESC,id DESC LIMIT 1""", (user_id,))).fetchone()
+        return row[0] if row and isinstance(row[0], UUID) else None
+
+    async def transfer_grant(self, user: UUID, source: UUID | None, target: UUID) -> None:
+        await self.connection.execute("DELETE FROM transfer_upload_grants WHERE user_id=%s", (user,))
+        if source:
+            await self.connection.execute("""INSERT INTO transfer_upload_grants(user_id,source_sid,target_sid,expires_at)
+                SELECT %s,id,%s,LEAST(expires_at,clock_timestamp()+interval '24 hours')
+                FROM auth_sessions WHERE id=%s""", (user, target, source))
 
     async def session(self, sid: UUID) -> Session | None:
         async with self.connection.cursor(row_factory=class_row(Session)) as cursor:

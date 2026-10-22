@@ -26,6 +26,7 @@ from chat.identity import Identity
 from chat.identity_crypto import token_hash
 from chat.identity_dto import Registration
 from chat.identity_redis import IdentityRedis
+from chat_client.bootstrap import BootstrapIssuer
 
 pytestmark = [pytest.mark.integration, pytest.mark.skipif(
     os.environ.get("RUN_INTEGRATION") != "1" or os.environ.get("APP_ENV") != "test",
@@ -165,6 +166,29 @@ def test_recovery_and_bootstrap_single_use_single_session(identity_env: tuple[Se
         for email, phrase in ((registered.user.email, "wrong phrase"), (prefix + "missing@example.com", "wrong phrase")):
             with pytest.raises(APIError, match="INVALID_RECOVERY_PHRASE"):
                 await service.recover(email, phrase)
+    asyncio.run(run())
+
+
+def test_main_app_issuer_public_config_exchange_and_replay(identity_env: tuple[Settings, Mailbox, str]) -> None:
+    settings, mailbox, prefix = identity_env
+    settings = Settings.model_validate({**settings.model_dump(), "bootstrap_web_origins": ["https://main.example.test"]})
+
+    async def run() -> None:
+        async with client_for(settings, mailbox) as client:
+            config = await client.get("/api/v1/auth/bootstrap-config")
+            assert config.status_code == 200 and config.headers["cache-control"] == "no-store"
+            assert config.json() == {"origins": ["https://main.example.test"], "protocol_version": 1}
+            registered = (await client.post("/api/v1/users/register", json={"nick": prefix, "email": prefix + "@example.com"})).json()
+            key = Path(os.environ["BOOTSTRAP_PUBLIC_KEYS_DIR"]).parent / "bootstrap_local_private.pem"
+            issuer = BootstrapIssuer(key, "main-local-1")
+            token = issuer.issue(UUID(registered["user"]["id"]))
+            exchanged = await client.post("/api/v1/auth/exchange", json={"bootstrap_token": token})
+            assert exchanged.status_code == 200
+            client.headers["Authorization"] = "Bearer " + exchanged.json()["access_token"]
+            assert (await client.get("/api/v1/users/me")).json()["id"] == registered["user"]["id"]
+            assert (await client.post("/api/v1/auth/exchange", json={"bootstrap_token": token})).status_code == 401
+            client.headers["Authorization"] = "Bearer " + registered["tokens"]["access_token"]
+            assert (await client.get("/api/v1/users/me")).status_code == 401
     asyncio.run(run())
 
 
