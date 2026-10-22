@@ -17,7 +17,7 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 | N1 · Persistencia | N0 | Alembic, esquema §§17/24.3/28.2, índices, constraints, repositorios y transacciones | BD desde cero y actualización 0001→0002; unicidad y retención | Repositorios base y transacciones implementados; migraciones, concurrencia y retención probadas con servicios locales reales. Pendiente completar repositorios por flujo y validar versiones Compose |
 | N2 · Identidad y seguridad | N1 | Registro/verificación/recuperación, sesiones, bootstrap, JWT, rate limiting | Claims, expiración, reuse, revocación y aislamiento probados | REST y persistencia implementadas; pruebas de seguridad con BD/Redis reales. Pendientes proveedor SMTP real, cierre de sockets en N5 y versiones Compose |
 | N3 · Claves y contratos | N2 | Pública vigente, DTOs estrictos, errores, cursor, autorización, CORS | Protocolos/bytes correctos; fuzzing y accesos horizontales rechazados | Implementado y probado con servicios reales locales; cliente criptográfico de referencia y lecturas paginadas. Pendientes plataforma cliente final y homologación Compose/staging |
-| N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | Pendiente |
+| N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | REST implementado; apertura de voto adelantada de N6. Eventos WS pendientes de N5; homologación Compose/staging pendiente |
 | N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Pendiente |
 | N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Pendiente |
 | N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Pendiente |
@@ -153,7 +153,7 @@ concurrente, paginación con fechas empatadas y accesos horizontales rechazados.
 Servicios temporales PostgreSQL 18.6/Redis 8.0.5; las versiones exactas de Compose,
 SMTP real, WS, CI/cobertura y staging siguen pendientes. N3 no certifica producción.
 
-El siguiente desarrollo es **N4: invitaciones y transiciones de conversación**.
+El siguiente desarrollo tras aquella entrega era N4; su implementación figura abajo.
 No hay nueva migración ni dependencia de runtime del servidor en N3.
 Decisiones no prescritas: DEC-45–DEC-52; detalle reproducible en VALIDACION.md.
 
@@ -169,6 +169,31 @@ Decisiones no prescritas: DEC-45–DEC-52; detalle reproducible en VALIDACION.md
   cliente. Leave termina el intercambio 1:1 sin introducir multi-dispositivo normal.
 - Tests: HMAC inválido/truncado, uint32, permisos, regeneración, carrera
   close/send, upgrade/send y visibilidad de todos los endpoints.
+
+### Continuación N4 · 2026-09-21
+
+Implementados GET/regenerate/redeem de invitaciones y accept/upgrade/close/leave.
+Los códigos son HMAC-SHA-256 con layout normativo, sin identidad pública y estables
+hasta regenerar. Se valida email/sesión y se aplican cuotas por usuario/IP.
+Las transiciones bloquean la conversación y conservan privacidad pending.
+Leave cierra el intercambio 1:1; closed nunca se reactiva. Upgrade no copia
+mensajes efímeros anteriores a PostgreSQL.
+
+Accept abre exactamente un voto de 30 s y congela número e identidades de electores.
+La migración 0004_vote_electorate conserva esas identidades incluso si un usuario
+abandona o elimina su cuenta. Se adelanta esta apertura porque §25.4 exige devolver
+VoteSnapshot. Ballots, resolución, purga de gracia y notificaciones siguen en N6;
+la fila puede continuar open después del plazo hasta implementar esa resolución.
+No se reconstruyen censos de votos creados por herramientas externas antes de N4.
+
+Las pruebas de concurrencia descubrieron y verifican la corrección de un deadlock
+entre upgrade y las FK de entregas: las transiciones usan NO KEY UPDATE en users,
+compatible con KEY SHARE, y FOR UPDATE en conversations. Regenerar/canjear se
+serializa por usuarios y fila de invitación; canjes mutuos bloquean usuarios por UUID.
+Evidencia y límites en VALIDACION.md; decisiones DEC-53–DEC-59.
+
+El siguiente desarrollo es **N5: WebSocket y entrega**. Los eventos de conversación
+y la cancelación de offers aún no existen; no se afirma un flujo completo de chat.
 
 ## N5 · WebSocket (§§10, 15, 26, 28.2/28.4)
 

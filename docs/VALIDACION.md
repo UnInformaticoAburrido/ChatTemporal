@@ -1,5 +1,44 @@
 # Validación de la entrega
 
+## Continuación N4 · 2026-09-21
+
+Resultado: **79 pruebas unitarias y 37 de integración correctas (116 total)**.
+Ruff sin errores y mypy estricto sin errores en 33 módulos de servidor/cliente.
+Se mantienen los dos avisos de deprecación del cliente Starlette/httpx/AnyIO.
+No hay dependencias nuevas. No se repite la auditoría histórica de dependencias
+ni se presenta como una comprobación de vulnerabilidades actual.
+
+Servicios temporales PostgreSQL 18.6 y Redis 8.0.5, Python 3.14.4; sin puertos TCP
+ni acceso a los datos del proyecto. Evidencia: `/tmp/chat-persistence-test.JVljSA`.
+El runner aplica migraciones y detiene los servicios al terminar. Se comprueba:
+
+- Layout exacto de 30 bytes + HMAC de 32, uint32 máximo, 83 caracteres,
+  MAC alterado en cada byte, truncamientos, versión/modo inválidos y fuzz determinista.
+- Creación concurrente de una única identidad, códigos estables, regeneraciones
+  serializadas, revocación de ambas variantes y rollback al agotar generation.
+- Canje frente a regeneración y dos usuarios canjeándose mutuamente, sin deadlocks.
+- Autenticación, verificación, cuotas por usuario/IP, autocanje, pública inexistente,
+  sesión revocada, campos extra y códigos no utilizables.
+- Flujo REST real hasta pending/accept/upgrade/close/leave, sin fixtures de conversación;
+  aislamiento de terceros y peer=null incluso tras cerrar sin aceptar.
+- Accept concurrente crea un solo voto; el plazo es exactamente 30 s y leave no
+  modifica el censo. Borrar al invitado antes de aceptar impide una aceptación parcial.
+- Upgrade/send y close/send se serializan. El contenido previo efímero no aparece
+  en messages tras upgrade; un reintento de mensaje persistido tras close no duplica.
+- Migración desde cero y desde 0001, 0002 y **0003** hasta 0004_vote_electorate,
+  conservando los hashes y datos anteriores.
+
+La primera ejecución detectó un deadlock real entre el lock de usuario de upgrade
+y la FK recipient_user_id de una entrega. Se corrigió con FOR NO KEY UPDATE en
+el usuario para las transiciones, manteniendo FOR UPDATE en la conversación;
+la suite completa posterior pasa. No se oculta el fallo inicial como éxito.
+
+Límites: se adelanta solo la apertura del voto y su censo. Ballots, resolución y
+notificaciones siguen pendientes de N6; el estado open puede persistir tras el plazo.
+No hay servidor WS, eventos/cancelación de offers ni interfaz cliente. Siguen
+pendientes SMTP real, versiones exactas de Compose, HTTPS/WSS, cobertura/CI,
+staging y pruebas de operación. N4 no certifica producción.
+
 ## Continuación N2 · 2026-09-17
 
 Resultado: **50 pruebas unitarias y 24 de integración correctas (74 total)**.

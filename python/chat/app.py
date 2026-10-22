@@ -10,6 +10,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, gen
 from redis.asyncio import Redis
 
 from chat.config import Settings, load_settings, read_secret, validate_secrets
+from chat.conversation_api import conversation_router
 from chat.dependencies import dependencies_ready
 from chat.http_contracts import BodyLimit, install_handlers
 from chat.identity import Identity
@@ -30,7 +31,7 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
         app.state.draining = True
 
     application = FastAPI(
-        title="Chat · identidad, claves y contratos", version="0.3.0",
+        title="Chat · invitaciones y conversaciones", version="0.4.0",
         docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
     )
     application.state.draining = False
@@ -100,4 +101,5 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
     identity = Identity(settings, mailer=mailer)
     application.include_router(identity_router(identity, settings))
     application.include_router(resource_router(identity, settings))
+    application.include_router(conversation_router(identity, settings))
     return application

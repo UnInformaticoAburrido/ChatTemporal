@@ -42,6 +42,13 @@ para cargar rutas y contratos; no hay autoreload. La imagen de test sí debe
 reconstruirse: requirements-dev.lock incluye el cliente de referencia PyNaCl
 mediante requirements-client.lock. No instalar esa dependencia en la API.
 
+N4 requiere aplicar **0004_vote_electorate** antes de iniciar API/worker.
+Añade el censo de los votos abiertos al aceptar una conversación; no añade
+bibliotecas. Ejecutar la migración explícita aunque el contenedor migrate anterior
+figure como completado. Las pruebas cubren actualización desde 0003 y desde cero.
+Los votos previos creados fuera de los endpoints de N4 no reciben un censo inventado;
+no se consideran compatibles con el futuro flujo de votación sin revisión.
+
 En este despliegue inicial se admite una ventana breve de mantenimiento:
 
 ```bash
@@ -135,7 +142,7 @@ hasta contar con backup lógico cifrado y restauración ensayada. La política e
 - Incluir esquema/migraciones y datos de users, user_keys públicas, invitations,
   conversations, conversation_members; Push solo con cifrado.
 - Excluir datos de messages, message_events, message_deliveries, auth_sessions,
-  auth_refresh_tokens, email_verification_tokens, votes, vote_ballots. Un `pg_dump`
+  auth_refresh_tokens, email_verification_tokens, votes, vote_ballots, vote_eligible_members. Un `pg_dump`
   completo sin exclusiones o snapshot de volumen contradiría la retención.
 - Prueba mensual de restore aislado, RPO≤6h/RTO≤2h. Verificar tablas excluidas
   vacías, metadatos durables presentes y reautenticación requerida.
