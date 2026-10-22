@@ -5,13 +5,14 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg.rows import class_row, dict_row
+from psycopg.rows import class_row
 
 from chat.conversation_dto import VoteSnapshot
 from chat.errors import APIError
 from chat.invitation_codes import InvitationToken
 from chat.persistence import Mode
 from chat.resource_store import ConversationRecord, ResourceStore
+from chat.vote_store import VoteStore
 
 
 @dataclass(frozen=True)
@@ -112,18 +113,13 @@ class ConversationStore:
                                       (vote_id, identifier))
 
     async def vote(self, viewer: UUID, identifier: UUID) -> VoteSnapshot:
-        async with self.connection.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute("""SELECT v.id,v.conversation_id,v.subject,v.vote_type AS policy,
-                v.eligible_members,v.status,v.expires_at,
-                (SELECT count(*) FROM vote_ballots b WHERE b.vote_id=v.id AND b.choice) AS yes_votes,
-                (SELECT count(*) FROM vote_ballots b WHERE b.vote_id=v.id AND NOT b.choice) AS no_votes,
-                (SELECT choice FROM vote_ballots b WHERE b.vote_id=v.id AND b.user_id=%s) AS my_vote
-                FROM votes v WHERE v.conversation_id=%s AND v.subject='retain_grace_messages'
-                ORDER BY v.created_at DESC,v.id DESC LIMIT 1""", (viewer, identifier))
-            row = await cursor.fetchone()
-            if row is None:
-                raise APIError("CONVERSATION_NOT_ACTIVE", 409, "Conversation acceptance unavailable.")
-            return VoteSnapshot.model_validate(row)
+        row = await (await self.connection.execute("""SELECT id FROM votes
+            WHERE conversation_id=%s AND subject='retain_grace_messages'
+            ORDER BY created_at DESC,id DESC LIMIT 1""", (identifier,))).fetchone()
+        if row is None:
+            raise APIError("CONVERSATION_NOT_ACTIVE", 409, "Conversation acceptance unavailable.")
+        assert isinstance(row[0], UUID)
+        return await VoteStore(self.connection).snapshot(row[0], viewer)
 
     async def upgrade(self, identifier: UUID, actor: UUID) -> None:
         await self.connection.execute("""UPDATE conversations SET mode='stored',mode_changed_by=%s,
