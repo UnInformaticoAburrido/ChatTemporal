@@ -3,9 +3,9 @@
 Base creada a partir de la **especificación maestra de producción v1**. Incluye
 infraestructura, migraciones, identidad REST, claves públicas y lecturas paginadas.
 Ya existen registro, verificación, recuperación, sesiones y edición de perfil.
-N4 añade invitaciones y transiciones de conversación. **El MVP completo del chat
-sigue pendiente**: aún no hay envíos por WebSocket ni interfaz cliente. El siguiente
-nivel es N5; la emisión y resolución de votos corresponde a N6.
+N5 añade mensajería WebSocket stored/ephemeral sobre las invitaciones de N4.
+**El MVP completo sigue pendiente**: faltan la interfaz cliente y los niveles
+N6–N9. El siguiente paso es N6: emisión y resolución de votos.
 `/health/ready` y `/metrics` se mantienen en la red interna.
 
 - [Niveles, dependencias y criterios de aceptación](docs/NIVELES_PRODUCCION.md)
@@ -163,7 +163,7 @@ Todas las rutas usan `/api/v1`, JSON estricto y errores con X-Request-ID.
 | POST `/users/verify-email`, `/users/resend-verification` | Código de correo de un uso; reenvío invalida el anterior |
 | POST `/auth/exchange`, `/auth/recover` | Nueva sesión y revocación de las anteriores |
 | POST `/auth/refresh`, `/auth/logout` | Refresh rotado y cierre de sesión; reuse revoca la familia |
-| POST `/auth/ws-ticket` | Requiere email verificado; ticket temporal para el futuro WS de N5 |
+| POST `/auth/ws-ticket` | Requiere email verificado; ticket de un uso para `/ws/v1` |
 
 Para actualizar una instalación existente, reconstruye la imagen Python y aplica
 `0003_email_hash` siguiendo [la operación](docs/OPERACION.md). `make start` por sí
@@ -203,7 +203,7 @@ assert decrypt_text(message, bob) == "Hola"
 Este módulo no guarda privadas ni llama a la red. El cliente final deberá proteger
 su almacenamiento local e integrar la UI. `max_characters` permite cambiar el
 límite local de 256; el servidor solo valida estructura y bytes cifrados.
-`parse_message_send` prepara el contrato futuro, sin habilitar envío WS todavía.
+`parse_message_send` valida el contrato utilizado por el servidor WS de N5.
 Las pruebas N3 conservan fixtures de lectura; las de N4 crean conversaciones por REST.
 
 ## Invitaciones y conversaciones (N4)
@@ -236,8 +236,45 @@ El censo y plazo de aceptación quedan persistidos con la migración
 
 N4 abre el voto y bloquea las escrituras internas durante sus 30 s, pero **todavía
 no permite votar ni resuelve el resultado**: eso se implementará en N6. Hasta
-entonces, su fila puede conservar status=open después del plazo. La publicación
-de eventos y cancelación de offers requieren N5, pues aún no existe el servidor WS.
+entonces, su fila puede conservar status=open después del plazo. N5 publica los eventos de conversación y cancela offers pendientes; los mensajes
+ya confirmados antes de un cierre o upgrade conservan su semántica original.
+
+## Mensajería WebSocket (N5)
+
+1. Obtener `POST /api/v1/auth/ws-ticket` con Bearer y email verificado.
+2. Conectar a `/ws/v1?ticket=...`. El ticket dura 30 s y solo admite un uso;
+   nunca colocar el JWT en la URL. Se recibe `session.ready`.
+3. En stored, enviar `message.send` directamente. La aceptación se comprueba con
+   **GET `/api/v1/messages/{message_id}/status`**: pending/delivered/failed/expired.
+   No existe un evento `message.accepted`. Reintentar el mismo UUID y payload no
+   duplica contenido ni consume otra unidad de gracia.
+4. En ephemeral, usar `message.offer` → `message.ready` → `message.send` →
+   `message.new` → `message.ack` → `message.delivered`. La autorización ready
+   queda ligada a la conexión receptora y vence con el plazo original de oferta.
+   Tras fallo definitivo o reconexión, iniciar un nuevo intento con UUID nuevo.
+
+Todos los frames son JSON con `type`, `request_id`, `conversation_id`, `timestamp`
+y `payload`, conforme a §26. `message_id` y `request_id` son UUIDv4 diferentes en
+su propósito. Los binarios se rechazan con 1003; el máximo inicial es 8192 bytes.
+El heartbeat es ping/pong nativo (25 s, timeout 75 s), no mensajes JSON.
+
+El servidor conserva ciphertext stored en PostgreSQL hasta su caducidad. Offline
+se consulta el historial REST. El ciphertext ephemeral reside solo en RAM/Redis,
+con TTL de entrega (60 s por defecto), y se borra tras ACK o desconexión. Una oferta
+sin send no crea message_events. Un receptor que conecta a tiempo recibe sus ofertas
+pendientes; Web Push se implementará en N7.
+
+Pub/Sub distribuye eventos entre instancias. Las sesiones se revalidan en cada
+operación y periódicamente en sockets ociosos. Si Redis pierde estado, se cierran
+las conexiones y se exige un ticket nuevo. Pub/Sub no es una cola durable: tras
+reconectar, consultar estado/historial REST. La reconexión con backoff de §26.2
+corresponde al cliente final, todavía pendiente.
+
+Aplicar **0005_delivery_mode** antes de arrancar API/worker. Guarda el modo histórico,
+plazo y conexión de cada entrega, para que upgrade o pérdida de Redis no conviertan
+un mensaje efímero en persistente. El worker reconcilia entregas huérfanas y plazos;
+los votos continúan pendientes de resolución en N6. Ver [operación](docs/OPERACION.md)
+y [evidencia de pruebas](docs/VALIDACION.md).
 
 Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con

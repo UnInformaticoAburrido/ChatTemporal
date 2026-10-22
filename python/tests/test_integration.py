@@ -20,7 +20,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(
 def test_migrations_and_retention_against_real_services() -> None:
     user_id, session_id = uuid4(), uuid4()
     with psycopg.connect(read_secret("DATABASE_URL")) as connection:
-        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004_vote_electorate",)
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0005_delivery_mode",)
         connection.execute("INSERT INTO users(id,nick,email,memory_hash) VALUES (%s,%s,%s,%s)",
                            (user_id, str(user_id), f"{user_id}@test.invalid", "test-only"))
         connection.execute("""INSERT INTO auth_sessions(id,user_id,refresh_token_hash,expires_at)

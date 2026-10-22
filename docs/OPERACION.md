@@ -49,6 +49,11 @@ figure como completado. Las pruebas cubren actualización desde 0003 y desde cer
 Los votos previos creados fuera de los endpoints de N4 no reciben un censo inventado;
 no se consideran compatibles con el futuro flujo de votación sin revisión.
 
+N5 requiere **0005_delivery_mode**, sin nuevas bibliotecas de runtime. Reiniciar
+API y worker después de la migración. `mode_at_send` es NULL para eventos antiguos:
+no usar el modo actual de la conversación para reconstruirlo. Deadline y conexión
+se guardan en message_deliveries; el ciphertext efímero nunca se añade a PostgreSQL.
+
 En este despliegue inicial se admite una ventana breve de mantenimiento:
 
 ```bash
@@ -90,8 +95,36 @@ dividen en dos releases (§30.2).
   sustituto de pruebas de carga/capacidad.
 - Logout/recovery/reuse confirman la revocación en PostgreSQL y publican el sid en
   `auth:session_revoked`. Si Redis falla después, la respuesta es 503 pero la sesión
-  sigue revocada. N5 deberá cerrar sus sockets y revalidar sid ante reconexiones;
-  el Pub/Sub actual no es una cola durable ni acredita ese cierre todavía.
+  sigue revocada. N5 cierra sockets al recibir el aviso y también revalida sid
+  cada segundo en conexiones ociosas; Pub/Sub no es una cola durable.
+
+## Operar WebSocket y entregas (N5)
+
+- La ruta pública `/ws/v1` pasa por Caddy. Un rechazo antes del upgrade aparece
+  como HTTP 403 (semántica ASGI); 4401 es el cierre de una conexión ya aceptada
+  cuya sesión deja de ser válida. No registrar querystrings con tickets.
+- Mantener el worker activo. Reconciliación por lotes de hasta 1000 pendientes;
+  medir su retraso bajo carga antes de producción. Close/upgrade y desconexión
+  reconcilian solo su conversación/conexión mediante índices específicos.
+- `EPHEMERAL_OFFER_TIMEOUT_SECONDS` y `EPHEMERAL_DELIVERY_TIMEOUT_SECONDS` se
+  configuran con sus campos TOML existentes. `ready` no amplía el plazo de offer.
+- La metadata `ephemeral:attempt:*` conserva un marcador de modo/resultado hasta
+  30 días desde su creación, en Redis no persistente y sin ciphertext. El permiso
+  de envío vence con su deadline corto. Este marcador impide que un send efímero
+  tardío se trate como stored después de upgrade. Incluir su volumen en capacidad
+  de Redis; noeviction implica 503/cierre explícito cuando no queda memoria.
+- Cuota de mensajes: 120/min, burst 20 por usuario; offer+send consume una sola
+  unidad. La defensa adicional `rate_limits.ws_frames` limita todos los frames a
+  600/min por sid, burst 100. Tres excesos consecutivos tras aviso cierran con 4429.
+- La pérdida de Redis obliga a reconectar con ticket nuevo. El chequeo atómico de
+  presencia/intento impide que un socket previo continúe sin sus permisos.
+- Pub/Sub y PostgreSQL/Redis no comparten transacción distribuida. Un commit stored
+  permanece aunque falle la publicación; cliente consulta estado e historial.
+  Ephemeral huérfano termina failed/expired según conexión/deadline durable. No
+  interpretar ausencia de `message.delivered` como ausencia de commit.
+- La implementación de heartbeat usa el backend `websockets` fijado en Uvicorn;
+  sus avisos de deprecación quedan registrados. La migración de backend se hará
+  con pruebas de ping/pong, límites y shutdown, no cambiando solo la cadena.
 
 ## Diagnóstico
 
@@ -123,8 +156,8 @@ comandos que copien tokens/URLs secretas a logs o historial de terminal.
 ## Mantenimiento y observabilidad
 
 Worker borra contenido expirado, metadatos, verificaciones y familias de refresh
-fuera de auditoría. **Cierre de votos y reconciliación de deliveries no están
-implementados todavía**, porque dependen del dominio N5/N6.
+fuera de auditoría. N5 añade reconciliación de entregas efímeras entre purgas,
+con un intervalo objetivo de un segundo. **El cierre de votos sigue pendiente de N6**.
 
 `docker compose --profile observability up -d` activa Prometheus interno. Métricas
 actuales: readiness y edad de la última purga. Alertas iniciales: indisponibilidad

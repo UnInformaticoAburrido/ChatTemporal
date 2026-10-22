@@ -1,20 +1,26 @@
 """N4: autorizaciones, privacidad y transiciones atómicas de conversaciones 1:1."""
 
 import os
+from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
+from redis.exceptions import RedisError
+
+from chat.config import Settings
 from chat.conversation_dto import AcceptedConversation, InvitationCodes, RedeemedConversation
 from chat.conversation_store import ConversationStore
-from chat.errors import APIError
+from chat.errors import APIError, unavailable
 from chat.identity import Principal
 from chat.identity_store import IdentityStore
 from chat.invitation_codes import decode_code, encode_code
-from chat.persistence import User, transaction
+from chat.persistence import UnitOfWork, User, transaction
+from chat.realtime_redis import publish
 from chat.resource_dto import ConversationSummary
 from chat.resource_store import ResourceStore
 from chat.resources import summary
+from chat.ws_protocol import frame, utc_text
 
 
 def verified(user: User) -> None:
@@ -28,6 +34,9 @@ def invitation_secret() -> bytes:
 
 
 class ConversationService:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
     async def codes(self, principal: Principal, *, regenerate: bool = False) -> InvitationCodes:
         secret = invitation_secret()
         async with transaction() as unit:
@@ -70,6 +79,33 @@ class ConversationService:
     async def change(self, principal: Principal, identifier: UUID,
                      action: Literal["accept", "upgrade", "close", "leave"],
                      ) -> AcceptedConversation | ConversationSummary | None:
+        events: list[tuple[UUID, dict[str, Any]]] = []
+        result = await self._change(principal, identifier, action, events)
+        if events:
+            # El estado ya hizo commit. No revertirlo si falla Pub/Sub; reconectar
+            # y GET recupera el estado durable. Reconciliador cancela offers pendientes.
+            from chat.reconciliation import reconcile_once
+            try:
+                await reconcile_once(self.settings, conversation=identifier)
+                for user, event in events:
+                    await publish(user, event)
+            except (RedisError, OSError):
+                raise unavailable() from None
+        return result
+
+    async def _queue(self, unit: UnitOfWork, identifier: UUID, kind: str, payload: dict[str, Any],
+                     events: list[tuple[UUID, dict[str, Any]]]) -> None:
+        rows = await (await unit.connection.execute(
+            "SELECT user_id FROM conversation_members WHERE conversation_id=%s", (identifier,),
+        )).fetchall()
+        for row in rows:
+            assert isinstance(row[0], UUID)
+            events.append((row[0], frame(kind, identifier, payload)))
+
+    async def _change(self, principal: Principal, identifier: UUID,
+                      action: Literal["accept", "upgrade", "close", "leave"],
+                      events: list[tuple[UUID, dict[str, Any]]],
+                      ) -> AcceptedConversation | ConversationSummary | None:
         async with transaction() as unit:
             # Compatible con KEY SHARE de las FK de mensajes/entregas. FOR UPDATE
             # aquí produciría un deadlock: usuario → conversación → FK usuario.
@@ -81,11 +117,25 @@ class ConversationService:
             membership = await store.lock(principal.user.id, identifier, allow_left=action == "leave")
             if action == "leave":
                 if membership != "left":
+                    before = await store.visible(principal.user.id, identifier)
                     await store.leave(identifier, principal.user.id)
+                    if before.status != "closed":
+                        closed = await (await unit.connection.execute(
+                            "SELECT closed_at FROM conversations WHERE id=%s", (identifier,),
+                        )).fetchone()
+                        assert closed
+                        assert isinstance(closed[0], datetime)
+                        await self._queue(unit, identifier, "conversation.closed",
+                                          {"closed_at": utc_text(closed[0]), "closed_by_role": before.role}, events)
                 return None
             row = await store.visible(principal.user.id, identifier)
             if action == "close":
                 await store.close(identifier, principal.user.id)
+                if row.status != "closed":
+                    closed_row = await store.visible(principal.user.id, identifier)
+                    assert closed_row.closed_at
+                    await self._queue(unit, identifier, "conversation.closed",
+                                      {"closed_at": utc_text(closed_row.closed_at), "closed_by_role": row.role}, events)
                 return None
             if row.role != "host":
                 raise APIError("NOT_CONVERSATION_HOST", 403, "Only the host can perform this action.")
@@ -94,10 +144,17 @@ class ConversationService:
             if action == "accept":
                 if row.status == "pending":
                     await store.accept(identifier)
+                    vote = await store.vote(principal.user.id, identifier)
+                    await self._queue(unit, identifier, "vote.opened", vote.model_dump(mode="json"), events)
                 return AcceptedConversation(conversation=summary(await store.visible(principal.user.id, identifier)),
                                             vote=await store.vote(principal.user.id, identifier))
             if row.status != "active":
                 raise APIError("CONVERSATION_NOT_ACTIVE", 409, "Active conversation required.")
             if row.mode == "ephemeral":
                 await store.upgrade(identifier, principal.user.id)
+                changed = await store.visible(principal.user.id, identifier)
+                assert changed.mode_changed_at
+                await self._queue(unit, identifier, "conversation.mode_changed",
+                                  {"old_mode": "ephemeral", "new_mode": "stored",
+                                   "changed_at": utc_text(changed.mode_changed_at), "changed_by_role": "host"}, events)
             return summary(await store.visible(principal.user.id, identifier))
