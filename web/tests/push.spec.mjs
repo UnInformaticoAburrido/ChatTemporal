@@ -47,10 +47,10 @@ async function setup(page, { deny = false, lostPost = false, lostDelete = false,
     throw Error(`Unexpected ${method} ${path}`);
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).click();
+  await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
   await page.getByLabel('Correo electrónico', { exact: true }).fill(user.email);
-  await page.getByLabel('Frase de recuperación', { exact: true }).fill(phrase);
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).last().click();
+  await page.getByLabel('Palabra 1', { exact: true }).fill(phrase);
+  await page.getByRole('button', { name: 'Acceder a mi cuenta', exact: true }).click();
   await page.getByRole('button', { name: 'Gestionar notificaciones' }).click();
   await expect(page.locator('#push-state')).toContainText('desactivadas');
   return calls;
@@ -68,7 +68,7 @@ test('activa solo por gesto, registra worker real sin caches y logout corta rece
   await expect(page.locator('#push-state')).toContainText('activas para esta sesión');
   expect(await page.evaluate(() => window.__pushCounts)).toEqual({ permission: 1, subscribe: 1, unsubscribe: 0 });
   await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Vuelve a tu cuenta' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bienvenido de nuevo' })).toBeVisible();
   expect(await page.evaluate(() => window.__pushCounts.unsubscribe)).toBe(1);
   expect(calls.filter(call => call.method === 'POST' && call.path.endsWith('/push/subscriptions'))).toHaveLength(1);
   expect(errors).toEqual([]);

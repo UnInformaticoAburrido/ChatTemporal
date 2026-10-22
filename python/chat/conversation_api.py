@@ -31,7 +31,7 @@ def conversation_router(identity: Identity, settings: Settings) -> APIRouter:
     async def redeem(data: Redeem, request: Request, principal: Member) -> RedeemedConversation:
         await identity.redis.limit("redeem_user", str(principal.user.id), settings.rate_limits.redeem_user)
         await identity.redis.limit("redeem_ip", await client_ip(request, settings), settings.rate_limits.redeem_ip)
-        return await service.redeem(principal, data.code)
+        return await service.redeem(principal, data.code, expected_mode=data.expected_mode)
 
     @router.post("/conversations/{conversation_id}/accept")
     async def accept(conversation_id: CanonicalUUID, principal: Member) -> AcceptedConversation:

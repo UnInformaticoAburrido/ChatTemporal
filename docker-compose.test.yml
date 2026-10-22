@@ -1,4 +1,6 @@
 services:
+  mailpit:
+    ports: !override []
   postgresql:
     entrypoint: [sh, /operations/safe-service-log.sh, postgresql, docker-entrypoint.sh]
     volumes:
@@ -23,6 +25,7 @@ services:
     environment:
       APP_ENV: test
       RUN_INTEGRATION: "1"
+      CHAT_TEST_MAILPIT_HTTP: http://mailpit:8025
     volumes:
       - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
       # Fixtures y contratos necesitan scripts, migraciones y configuración del repo.

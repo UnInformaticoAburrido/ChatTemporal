@@ -198,3 +198,17 @@ test('subida preparada conserva solo access original, no refresh; clear y caduci
   api.clear();
   await assert.rejects(uploader.upload('id', 'encrypted'), { code: 'TRANSFER_ACCESS_EXPIRED' });
 });
+
+
+test('el canje privado exige modo efímero y explica el rechazo de códigos con historial', async () => {
+  const bodies = [];
+  const api = new ChatApi(async (path, options) => {
+    if (path.endsWith('/recover')) return response(tokens());
+    bodies.push(JSON.parse(options.body));
+    return response({ error: { code: 'INVITATION_MODE_MISMATCH' } }, 400);
+  });
+  await api.recover('ana@example.com', 'synthetic phrase');
+  await assert.rejects(api.redeem('synthetic-code', { ephemeralOnly: true }), { code: 'INVITATION_MODE_MISMATCH' });
+  assert.deepEqual(bodies, [{ code: 'synthetic-code', expected_mode: 'ephemeral' }]);
+  assert.match(errorMessage(new ApiError('INVITATION_MODE_MISMATCH')), /invitación efímera/);
+});

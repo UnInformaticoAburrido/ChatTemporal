@@ -1,4 +1,4 @@
-.PHONY: init config up start stop down logs test test-web-e2e check coverage-check
+.PHONY: init config up start stop down logs reload-web test test-web-e2e check coverage-check
 LOCAL = docker compose -f docker-compose.yml -f docker-compose.local.yml
 
 init:
@@ -24,6 +24,10 @@ down:
 
 logs:
 	$(LOCAL) logs --tail=100 -f
+
+# Aplicar rutas/cabeceras nuevas de los archivos montados sin reconstruir imágenes.
+reload-web:
+	$(LOCAL) exec -T caddy caddy reload --config /etc/caddy/Caddyfile.local --adapter caddyfile
 
 test:
 	cd python && python -m pytest -m 'not integration'

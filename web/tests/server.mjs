@@ -1,17 +1,23 @@
 // Solo servidor de assets del ensayo; no sustituye Caddy ni expone el checkout.
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 const root = new URL('../public/', import.meta.url);
 const files = new Map(['index.html', 'styles.css', 'app.js', 'api.js', 'keys.js', 'keys-ui.js', 'chat.js', 'chat-ui.js',
   'transfers.js', 'transfers-ui.js', 'qr.js', 'push.js', 'push-ui.js', 'service-worker.js', 'bootstrap.js', 'vendor/qr.js', 'vendor/qr.LICENSE.txt', 'vendor/sodium.js', 'vendor/sodium.LICENSE.txt']
   .map(file => ['/' + file, file]));
 files.set('/', 'index.html');
+for (const directory of ['assets', 'assets/fonts', 'assets/icons']) {
+  for (const entry of await readdir(new URL(directory + '/', root), { withFileTypes: true })) {
+    if (entry.isFile()) files.set('/' + directory + '/' + entry.name, directory + '/' + entry.name);
+  }
+}
 createServer(async (request, response) => {
   const file = files.get(request.url);
   if (!file) { response.writeHead(404).end(); return; }
-  const type = file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html';
+  const extension = file.split('.').at(-1);
+  const type = ({ js: 'text/javascript', css: 'text/css', png: 'image/png', svg: 'image/svg+xml', woff2: 'font/woff2', txt: 'text/plain' })[extension] || 'text/html';
   response.writeHead(200, { 'Content-Type': type + '; charset=utf-8', 'Cache-Control': 'no-store',
-    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
+    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
   response.end(await readFile(new URL(file, root)));
 }).listen(4173, '127.0.0.1');
 

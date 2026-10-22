@@ -29,6 +29,7 @@ async function fixture(page, { registerError = null, logoutFails = false, malici
   return calls;
 }
 async function register(page) {
+  await page.getByRole('button', { name: 'Crear cuenta', exact: true }).click();
   await page.getByLabel('Nombre de usuario', { exact: true }).fill('ana');
   await page.getByLabel('Correo electrónico', { exact: true }).fill('ana@example.com');
   await page.getByRole('button', { name: 'Crear mi cuenta' }).click();
@@ -55,7 +56,7 @@ test('registro, confirmación de frase, verificación y logout', async ({ page }
   expect(await page.context().cookies()).toEqual([]);
   expect(calls.find(call => call.path.endsWith('/verify-email')).headers.authorization).toBeUndefined();
   await page.getByRole('button', { name: 'Cerrar sesión' }).click();
-  await expect(page.getByRole('heading', { name: 'Vuelve a tu cuenta' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bienvenido de nuevo' })).toBeVisible();
   expect(calls.filter(call => call.path.endsWith('/logout'))).toHaveLength(1);
   expect(errors).toEqual([]);
 });
@@ -72,20 +73,20 @@ test('servicio no disponible no presenta registro ni frase ficticios', async ({ 
 
 test('recuperación valida longitud, trata identidad como texto y avisa de logout dudoso', async ({ page }) => {
   const calls = await fixture(page, { logoutFails: true, maliciousNick: true });
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).click();
+  await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
   await page.getByLabel('Correo electrónico', { exact: true }).fill('ana@example.com');
-  await page.getByLabel('Frase de recuperación', { exact: true }).fill('too short');
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).last().click();
+  await page.getByLabel('Palabra 1', { exact: true }).fill('too short');
+  await page.getByRole('button', { name: 'Acceder a mi cuenta', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('24 palabras');
   expect(calls).toHaveLength(0);
-  await page.getByLabel('Frase de recuperación', { exact: true }).fill(mnemonic);
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).last().click();
-  await expect(page.getByRole('heading', { name: 'Hola,' })).toContainText('<img src=x');
-  await expect(page.locator('#screen img')).toHaveCount(0);
-  await expect(page.getByLabel('Frase de recuperación', { exact: true })).toHaveCount(0);
+  await page.getByLabel('Palabra 1', { exact: true }).fill(mnemonic);
+  await page.getByRole('button', { name: 'Acceder a mi cuenta', exact: true }).click();
+  await expect(page.locator('#user-name')).toContainText('<img src=x');
+  await expect(page.locator('#screen img[src=x]')).toHaveCount(0);
+  await expect(page.getByLabel('Palabra 1', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Cerrar sesión' }).click();
   await expect(page.getByRole('status')).toContainText('No hemos podido confirmar');
-  await expect(page.getByRole('heading', { name: 'Vuelve a tu cuenta' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bienvenido de nuevo' })).toBeVisible();
 });
 
 test('recarga no recupera credenciales y diseño no desborda', async ({ page }) => {
@@ -93,20 +94,20 @@ test('recarga no recupera credenciales y diseño no desborda', async ({ page }) 
   await expect(page.getByRole('listitem')).toHaveCount(24);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Tu primera conversación está por venir' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Una conversación puede ser el comienzo de todo.' })).toBeVisible();
   await expect(page.getByRole('listitem')).toHaveCount(0);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
 
 test('perfil temporalmente caído no obliga a reenviar la frase ni repetir recuperación', async ({ page }) => {
   const calls = await fixture(page, { profileFailsOnce: true });
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).click();
+  await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
   await page.getByLabel('Correo electrónico', { exact: true }).fill('ana@example.com');
-  await page.getByLabel('Frase de recuperación', { exact: true }).fill(mnemonic);
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).last().click();
+  await page.getByLabel('Palabra 1', { exact: true }).fill(mnemonic);
+  await page.getByRole('button', { name: 'Acceder a mi cuenta', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('no está disponible');
-  await expect(page.getByLabel('Frase de recuperación', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Palabra 1', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Consultar mi cuenta' }).click();
-  await expect(page.getByRole('heading', { name: 'Hola, ana.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
   expect(calls.filter(call => call.path.endsWith('/recover'))).toHaveLength(1);
 });

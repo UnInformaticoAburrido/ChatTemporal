@@ -48,8 +48,11 @@ class ConversationService:
                                    stored_code=encode_code(invitation.token("stored"), secret),
                                    generation=invitation.generation, created_at=invitation.created_at)
 
-    async def redeem(self, principal: Principal, code: str) -> RedeemedConversation:
+    async def redeem(self, principal: Principal, code: str, *,
+                     expected_mode: Literal["ephemeral", "stored"] | None = None) -> RedeemedConversation:
         token = decode_code(code, invitation_secret())
+        if expected_mode is not None and token.mode != expected_mode:
+            raise APIError("INVITATION_MODE_MISMATCH", 400, "Invitation mode does not match the requested mode.")
         async with transaction() as unit:
             store = ConversationStore(unit.connection)
             invitation = await store.invitation(token.id)

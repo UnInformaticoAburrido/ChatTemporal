@@ -15,7 +15,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 compose build postgresql python tests caddy
-compose up -d --wait --wait-timeout 180 postgresql redis
+compose up -d --wait --wait-timeout 180 postgresql redis mailpit
 compose run --rm --no-deps migrate
 # No ejecutar el worker durante fixtures que migran o fuerzan vencimientos.
 if [ "${CHAT_TEST_COVERAGE:-0}" = 1 ]; then

@@ -1,7 +1,7 @@
 import { LocalKey, KeyError } from './keys.js';
 
 // Solo copias cifradas descargadas explícitamente; ninguna escritura en storage del navegador.
-export async function mountKeys({ api, user, container, run, notify, finishHandoff = () => api.clear() }) {
+export async function mountKeys({ api, user, container, run, notify, finishHandoff = () => api.clear(), onChatReady = () => {}, initialConversation = () => null }) {
   let active = null, candidate = null, stopped = false, disposeChat = null, disposeTransfer = null, pendingTransfer = null;
   const urls = new Set();
   const alive = () => !stopped && container.isConnected && api.signedIn;
@@ -14,6 +14,22 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
   function render(markup) {
     check(); disposeTransfer?.(); disposeTransfer = null; container.innerHTML = markup;
     container.querySelector('h3')?.focus();
+  }
+  function showPublicKey(value) {
+    const area = document.createElement('section'); area.className = 'public-key';
+    const label = document.createElement('label'); label.htmlFor = 'own-public-key'; label.textContent = 'Tu clave pública';
+    const field = document.createElement('textarea'); field.id = 'own-public-key'; field.readOnly = true; field.rows = 2; field.value = value;
+    const help = document.createElement('p'); help.className = 'muted';
+    help.textContent = 'Puedes compartir esta clave pública. Para invitar a conversar, usa el botón «Obtener código para invitar» de tu cuenta.';
+    const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'secondary'; copy.textContent = 'Copiar mi clave pública';
+    copy.onclick = () => {
+      if (!alive() || !field.isConnected) return;
+      const fallback = () => { if (alive() && field.isConnected) { field.focus(); field.select(); notify('Clave pública seleccionada. Cópiala con Ctrl+C o con la opción de copiar del dispositivo.'); } };
+      if (!navigator.clipboard?.writeText) { fallback(); return; }
+      navigator.clipboard.writeText(value).then(() => { if (alive() && field.isConnected) notify('Clave pública copiada.'); }).catch(fallback);
+    };
+    area.append(label, field, copy, help);
+    container.querySelector('h3').after(area);
   }
   function form(id, action) {
     container.querySelector(id).onsubmit = event => {
@@ -59,6 +75,7 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
           <p class="muted">Preparar un traslado borra los mensajes efímeros de esta página. La transferencia incluye las claves; puedes pedir al interlocutor una copia del historial que conserve.</p>
           <button class="secondary" id="send-device-keys" type="button">Enviar claves a otro dispositivo</button>
           <button class="secondary" id="lock-key" type="button">Bloquear clave</button>`);
+        showPublicKey(restored.publicKey);
         container.querySelector('#lock-key').onclick = () => run(async () => {
           disposeChat?.(); disposeChat = null; active?.lock(); active = null; await start(); notify('Clave bloqueada en esta página.');
         });
@@ -79,8 +96,8 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
           try {
             const { mountChat } = await import('./chat-ui.js'); check();
             disposeChat?.(); disposeChat = null;
-            const dispose = await mountChat({ api, key: active, container: panel, run, notify, isAlive: alive });
-            if (!alive()) dispose(); else disposeChat = dispose;
+            const dispose = await mountChat({ api, key: active, container: panel, run, notify, isAlive: alive, initialConversation });
+            if (!alive()) dispose(); else { disposeChat = dispose; onChatReady(); }
           } catch (error) {
             if (!alive()) return;
             notify('La clave está abierta, pero no se pudo cargar el chat. Puedes volver a intentarlo.', true);
@@ -116,6 +133,7 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
     const remote = await api.ownKey(user.id); check();
     if (remote) {
       render(`<h3 tabindex="-1">Abre tu copia de claves</h3><p class="muted">Tu cuenta ya tiene una clave publicada. Abre su copia cifrada para usarla en esta sesión. Las 24 palabras recuperan tu cuenta, pero no descifran esta copia.</p>${importMarkup()}`);
+      showPublicKey(remote.public_key);
       bindImport(); bindReceive(); return;
     }
     render(`<h3 tabindex="-1">Prepara tus claves de conversación</h3>
@@ -141,6 +159,7 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
         setTimeout(() => { URL.revokeObjectURL(url); urls.delete(url); }, 1000);
         render(`<h3 tabindex="-1">Comprueba la copia que has guardado</h3>
           <p class="muted">Selecciona el archivo descargado e introduce su contraseña. Solo después se publicará la clave pública. La copia y la contraseña se procesan aquí y no se envían al servidor.</p>${importMarkup()}`);
+        showPublicKey(publicKey);
         bindImport(publicKey);
       } catch (error) { current.lock(); if (candidate === current) candidate = null; throw error; }
     });

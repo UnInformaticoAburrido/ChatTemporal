@@ -49,6 +49,13 @@ El archivo no reemplaza el protocolo de transferencia QR de N7 ni su formato.
 
 ## Publicación sin sustituciones accidentales
 
+La interfaz muestra la clave pública y el botón «Copiar mi clave pública» tanto
+al comprobar una copia nueva como al abrir la gestión de una clave existente,
+aunque la privada siga bloqueada. Para iniciar una conversación, la cuenta
+ofrece «Obtener código para invitar»: se comparte el código de invitación,
+sin revelar la privada ni la frase de recuperación. Si el portapapeles falla,
+el campo queda seleccionado para permitir copiarlo manualmente.
+
 La web consulta la pública propia. Si existe, solo ofrece abrir su copia y
 comprueba coincidencia; no llama a PUT ni al endpoint rotate. Si falta, publica
 mediante `PUT /users/me/keys` con `If-None-Match: *` después de verificar la copia.

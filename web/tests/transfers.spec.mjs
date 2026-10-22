@@ -61,19 +61,22 @@ async function server(context, { lostUpload = false, lostDelete = false } = {}) 
 }
 async function oldDevice(page, backup) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).click();
+  await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
   await page.getByLabel('Correo electrónico', { exact: true }).fill(user.email);
-  await page.getByLabel('Frase de recuperación', { exact: true }).fill(phrase);
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).last().click();
+  await page.getByLabel('Palabra 1', { exact: true }).fill(phrase);
+  await page.getByRole('button', { name: 'Acceder a mi cuenta', exact: true }).click();
   await page.getByRole('button', { name: 'Gestionar claves de conversación' }).click();
   await openBackup(page, backup);
-  await expect(page.getByText('Conectado · cifrado de extremo a extremo', { exact: true })).toBeVisible();
+  await expect(page.locator('#connection')).toContainText('Conectado');
+  await page.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
   await page.getByRole('button', { name: 'Enviar claves a otro dispositivo', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Traslada tus claves al nuevo dispositivo' })).toBeVisible();
   await expect(page.locator('#chat-panel')).toHaveCount(0);
 }
 async function newDevice(page) {
   await page.goto('/');
+  await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
+  await page.getByText('Otras formas de acceso', { exact: true }).click();
   await page.getByRole('button', { name: 'Acceder desde la aplicación principal', exact: true }).click();
   await page.getByLabel('Código de acceso de la aplicación principal', { exact: true }).fill('synthetic-bootstrap');
   await page.getByRole('button', { name: 'Entrar con el código', exact: true }).click();
@@ -87,6 +90,8 @@ async function openBackup(page, text) {
   await page.getByLabel('Copia cifrada de claves', { exact: true }).setInputFiles({ name: 'test.chatkey', mimeType: 'application/json', buffer: Buffer.from(text) });
   await page.getByLabel('Contraseña de la copia', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Abrir copia y comprobar clave', exact: true }).click();
+  await expect(page.locator('#screen')).not.toHaveAttribute('aria-busy', 'true');
+  await page.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
 }
 
 test('dos dispositivos transfieren claves por QR local y solo borran el blob después de abrir la nueva copia', async ({ page, context }) => {

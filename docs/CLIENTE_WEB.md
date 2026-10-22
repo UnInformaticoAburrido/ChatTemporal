@@ -1,10 +1,21 @@
-# Cliente web · identidad y próximos bloques
+# Cliente web Nexo
 
-Actualizado 2026-10-05. Identidad, claves, chat y Push del cliente final; no completa N9.
+Actualizado 2026-10-15. Identidad, claves, chat y Push del cliente final; no completa N9.
 Se adopta una web adaptable como opción inicial de implementación, pendiente de
 una preferencia explícita de plataforma. No se atribuye esa elección al usuario.
 
 ## Disponible
+
+La apariencia sigue los PDF de Nexo aportados por el usuario: bienvenida azul
+noche, formularios de registro/acceso en modal, perfil con tarjetas de invitación
+y chat con lista/buscador y conversación. El acceso mantiene email y 24 palabras,
+con campos numerados y pegado de la frase completa. El perfil permite editar
+nick/email; los avatares siguen usando iniciales. Navegar entre cuenta y chat no
+bloquea ni sustituye una clave abierta. Enter envía, Shift+Enter añade una línea;
+los mensajes entrantes no desplazan al usuario que está leyendo arriba.
+Detalles y compatibilidad en [NEXO_UI.md](NEXO_UI.md), con revisión en
+[design-qa.md](../design-qa.md). Para cargar rutas/cabeceras nuevas en el Docker
+local: `sudo make start reload-web`.
 
 Caddy sirve `web/public/` en `/`, con API en el mismo origen. HTML, CSS y módulos
 JavaScript nativos; libsodium y QR se sirven como bundles locales versionados.
@@ -22,7 +33,14 @@ La configuración sigue el [patrón oficial de Caddy](https://caddyserver.com/do
 - Renovación de tokens en una única petición compartida por llamadas simultáneas.
   Un refresh de resultado dudoso elimina la sesión local, sin reenvío automático.
 - Errores traducidos por código; datos de usuario como texto, sin HTML interpolado.
-- Conversaciones e invitaciones stored/ephemeral después de abrir la copia de claves.
+- Cabecera visible en escritorio y móvil: «Sin sesión» o «Sesión iniciada · nick».
+  Al acceder se retira la introducción de registro y la cuenta usa todo el espacio;
+  al cerrar o perder la sesión se recupera la pantalla de acceso.
+- Botón visible en la cuenta verificada «Obtener código para invitar», con copia
+  de invitaciones stored/ephemeral y renovación explícita. No requiere desbloquear
+  la privada si ya existe una pública publicada. Si falta la pública, lleva a crear
+  y comprobar la copia antes de compartir una invitación que el otro pueda canjear.
+- Conversaciones y canje de invitaciones después de abrir la copia de claves.
   Canje, renovación, aceptación del host, cierre, salida y upgrade irreversible.
   Pending conserva anonimato: se obtiene la clave del interlocutor sin UUID/nick.
 - Envíos cifrados localmente, hasta 256 puntos de código. Stored consulta estado
@@ -62,6 +80,9 @@ La frase BIP-39 recupera identidad, **no sustituye las claves de descifrado**.
 La web permite generar una clave X25519 inicial, descargar su copia cifrada y
 volver a abrirla antes de publicar la pública. Si ya existe una clave, exige una
 copia coincidente y no la sustituye. Detalles en [CLAVES_CLIENTE.md](CLAVES_CLIENTE.md).
+La gestión de claves muestra «Tu clave pública» y permite copiarla incluso si
+la copia privada está bloqueada. El código de invitación es lo que debe compartir
+el usuario para iniciar una conversación. Nunca se muestran privadas sin cifrar.
 Mensajes y ciphertext pendientes también viven solo en RAM; bloquear la clave,
 cerrar sesión o abandonar la página borra la vista y detiene sockets/temporizadores.
 Cada conversación conserva como máximo 500 mensajes consultados, indicado al
@@ -75,8 +96,10 @@ se reconcilia antes de quitar su contenido.
 
 Tras `make up` (o `make start` si las imágenes ya existen), abrir
 `http://localhost:18080/`, o el puerto elegido con CHAT_HTTP_PORT.
-El frontend no evita el requisito SMTP: con el proveedor local sin configurar,
-registro falla con 503 y el backend revierte la creación; la UI informa del fallo.
+El override local incluye el buzón Mailpit en `http://127.0.0.1:18025/` para los
+códigos de verificación, cuando el secreto SMTP conserva el marcador inicial.
+Con un SMTP real se utiliza ese proveedor; un fallo de correo provoca 503 y
+rollback del registro. Producción necesita un proveedor externo configurado.
 
 Pruebas de desarrollo (Node 22+; CI fija 24.21.0, Playwright 1.63.0):
 
@@ -120,3 +143,55 @@ proveedores y staging siguen pendientes. Comandos y límites en [E2E_WEB.md](E2E
 La custodia inicial usa copias cifradas portables y privadas en memoria. Cualquier
 persistencia automática futura y las sesiones durables requieren diseño separado. Grupos, adjuntos y
 multi-dispositivo permanente continúan fuera del MVP v1.
+
+## Conversaciones como apartado propio
+
+La cabecera «Conversaciones» abre `/#chat`. Antes de desbloquear la clave privada
+se muestra la lista de conversaciones activas y pendientes, con actualización
+periódica y paginación. Seleccionar una guía a abrir la copia cifrada y después
+carga esa conversación. «Abrir mis mensajes» permite preparar las claves sin
+seleccionar todavía una conversación. Se mantienen las claves y mensajes en RAM
+al alternar entre cuenta y chat durante la misma sesión.
+
+«Nueva conversación» abre un modal para introducir el código de otra persona.
+Este recorrido pide **la invitación efímera**, y envía `expected_mode: ephemeral`.
+El backend valida el modo firmado antes de crear nada; si se pega una invitación
+con historial devuelve `INVITATION_MODE_MISMATCH` sin consumir un uso. Los clientes
+anteriores que omitan el nuevo campo conservan su contrato de canje.
+
+Después del canje se selecciona la conversación. El destinatario la ve al
+actualizar su lista o recibir la actualización periódica. Se mantienen la
+aceptación por el anfitrión y las reglas existentes de mensajes de gracia/voto.
+Con las claves abiertas, seleccionar una conversación presenta exclusivamente
+sus mensajes; el compositor envía por botón o Enter, con Shift+Enter para saltos.
+
+En modo efímero ambos usuarios necesitan estar conectados. No se escribe el
+payload en la tabla `messages` ni se consulta historial remoto. El servidor actúa
+como relevo temporal de contenido cifrado y conserva metadatos de entrega; no es
+una conexión directa entre navegadores. Los textos descifrados y el historial
+local permanecen en memoria y se pierden al cerrar, recargar o cerrar sesión.
+Las conversaciones previas con historial conservan su modo y se identifican en
+la cabecera. Su existencia no cambia la política de las nuevas invitaciones.
+
+### Aplicar esta actualización local
+
+Los fuentes Python y web están montados desde el proyecto. Como cambia también
+la validación del API, hay que recargar el proceso Python antes de usar el nuevo
+formulario; no hace falta migración ni reconstruir imágenes:
+
+```bash
+sudo docker compose -f docker-compose.yml -f docker-compose.local.yml restart python worker
+sudo make reload-web
+```
+
+Después recarga `http://localhost:18080/` y vuelve a acceder. No reiniciar ni
+borrar PostgreSQL para aplicar esta función.
+
+### Pruebas
+
+`web/tests/conversations.spec.mjs` cubre listado antes de desbloquear, selección
+guiada, rechazo de invitaciones con historial, intercambio cifrado entre dos
+páginas y aislamiento al cambiar de conversación, tanto en escritorio como en
+móvil. El relevo de ese ensayo es sintético. Las pruebas de integración existentes
+con PostgreSQL/Redis verifican por separado la ausencia de ciphertext durable
+efímero; requieren acceso a Docker y no se sustituyen por el ensayo sintético.

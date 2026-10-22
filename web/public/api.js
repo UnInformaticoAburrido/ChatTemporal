@@ -8,6 +8,7 @@ export class ApiError extends Error {
 }
 
 const messages = {
+  INVITATION_MODE_MISMATCH: "Este código guarda historial en el servidor. Pide a la otra persona su invitación efímera para conversar sin guardar mensajes.",
   INVITATION_INVALID: "El código de invitación no es válido.",
   INVITATION_REVOKED: "Esta invitación ha caducado o se ha renovado.",
   HOST_KEY_UNAVAILABLE: "El anfitrión todavía no ha preparado sus claves.",
@@ -201,6 +202,7 @@ export class ChatApi {
     }
   }
   me() { return this.#authorized('/users/me'); }
+  updateProfile(nick, email) { return this.#authorized('/users/me', { method: 'PATCH', body: { nick, email } }); }
   async ownKey(userId) {
     try { return await this.#authorized('/users/' + encodeURIComponent(userId) + '/keys'); }
     catch (error) { if (error.status === 404 && error.code === 'USER_NOT_FOUND') return null; throw error; }
@@ -216,7 +218,10 @@ export class ChatApi {
   history(id, cursor = null) { return this.#authorized('/conversations/' + encodeURIComponent(id) + '/messages' + this.#page(cursor)); }
   invitations() { return this.#authorized('/invitations/me'); }
   regenerate() { return this.#authorized('/invitations/regenerate', { method: 'POST' }); }
-  redeem(code) { return this.#authorized('/invitations/redeem', { method: 'POST', body: { code } }); }
+  redeem(code, { ephemeralOnly = false } = {}) {
+    return this.#authorized('/invitations/redeem', { method: 'POST',
+      body: { code, ...(ephemeralOnly ? { expected_mode: 'ephemeral' } : {}) } });
+  }
   change(id, action) {
     return this.#authorized('/conversations/' + encodeURIComponent(id) + (action === 'close' ? '' : '/' + action),
       { method: action === 'close' ? 'DELETE' : 'POST' });

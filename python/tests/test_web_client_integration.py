@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(
     or os.environ.get("RUN_WEB_E2E") != "1",
     reason="Requiere RUN_WEB_E2E=1, servicios aislados, Node y Chromium de Playwright",
 )]
-CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; "
+CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; "
        "connect-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 HEADERS = {"Cache-Control": "no-store", "Content-Security-Policy": CSP,
            "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"}
@@ -137,6 +137,8 @@ def test_browser_with_real_api_ws_database_and_redis(web_environment: Settings) 
         # Misma lista pública que Caddy, sin montar el checkout como StaticFiles.
         paths = next(line.split()[2:] for line in (ROOT / "caddy/routes.caddy").read_text().splitlines()
                      if line.startswith("@web path "))
+        paths.extend("/" + path.relative_to(ROOT / "web/public").as_posix()
+                     for path in (ROOT / "web/public/assets").rglob("*") if path.is_file())
 
         @app.get("/{asset:path}")
         async def asset(asset: str) -> Response:

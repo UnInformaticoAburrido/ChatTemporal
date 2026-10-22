@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import random
 import struct
@@ -5,6 +6,8 @@ from uuid import UUID
 
 import pytest
 
+from chat.conversation_dto import Redeem
+from chat.conversations import ConversationService
 from chat.errors import APIError
 from chat.invitation_codes import InvitationToken, decode_code, encode_code
 from chat.protocol import decode_binary, encode_binary
@@ -52,3 +55,20 @@ def test_deterministic_fuzz_rejects_random_unsigned_inputs() -> None:
     for _ in range(300):
         with pytest.raises(APIError):
             decode_code(encode_binary(rng.randbytes(rng.randrange(100))), SECRET)
+
+
+@pytest.mark.parametrize("actual,expected", [("stored", "ephemeral"), ("ephemeral", "stored")])
+def test_requested_mode_rejected_before_any_database_write(monkeypatch: pytest.MonkeyPatch,
+                                                         actual: str, expected: str) -> None:
+    monkeypatch.setattr("chat.conversations.invitation_secret", lambda: SECRET)
+
+    def no_transaction() -> None:
+        pytest.fail("A mismatched invitation must not create a conversation or consume a use")
+
+    monkeypatch.setattr("chat.conversations.transaction", no_transaction)
+    code = encode_code(InvitationToken(IDENTIFIER, 1, 1780000000, actual), SECRET)
+    request = Redeem(code=code, expected_mode=expected)
+    with pytest.raises(APIError) as error:
+        asyncio.run(ConversationService(None).redeem(None, request.code, expected_mode=request.expected_mode))
+    assert error.value.code == "INVITATION_MODE_MISMATCH"
+    assert error.value.status == 400

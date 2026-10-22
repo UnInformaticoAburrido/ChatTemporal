@@ -67,4 +67,4 @@ if __name__ == "__main__":
         initialize(args.directory)
     except FileExistsError as exc:
         parser.exit(1, str(exc) + "\n")
-    print("Configuración LOCAL generada; no habilita correo ni despliegue de producción.")
+    print("Configuración LOCAL generada. make up habilita el buzón en http://localhost:18025; no configura producción.")

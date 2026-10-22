@@ -30,11 +30,11 @@ handle @api {
 		}
 	}
 }
-@web path / /index.html /app.js /api.js /styles.css /keys.js /keys-ui.js /chat.js /chat-ui.js /transfers.js /transfers-ui.js /qr.js /push.js /push-ui.js /service-worker.js /bootstrap.js /vendor/qr.js /vendor/qr.LICENSE.txt /vendor/sodium.js /vendor/sodium.LICENSE.txt
+@web path / /index.html /app.js /api.js /styles.css /keys.js /keys-ui.js /chat.js /chat-ui.js /transfers.js /transfers-ui.js /qr.js /push.js /push-ui.js /service-worker.js /bootstrap.js /vendor/qr.js /vendor/qr.LICENSE.txt /vendor/sodium.js /vendor/sodium.LICENSE.txt /assets/nexo-logo.png /assets/nexo-chat-logo.png /assets/icons/* /assets/fonts/*
 handle @web {
 	root * /srv/chat-web
 	header {
-		Content-Security-Policy "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 		Cache-Control "no-store"
 		Referrer-Policy "no-referrer"
 		X-Content-Type-Options "nosniff"

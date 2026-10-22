@@ -52,9 +52,13 @@ async def run() -> None:
             assert "'wasm-unsafe-eval'" in page.headers["content-security-policy"]
             assert "'unsafe-eval'" not in page.headers["content-security-policy"]
             assert "worker-src 'self'" in page.headers["content-security-policy"]
+            assert "font-src 'self'" in page.headers["content-security-policy"]
+            assert "img-src 'self' blob:" in page.headers["content-security-policy"]
             for asset in ("/app.js", "/api.js", "/styles.css", "/keys.js", "/keys-ui.js", "/chat.js",
                           "/chat-ui.js", "/transfers.js", "/transfers-ui.js", "/qr.js", "/vendor/qr.js",
-                          "/vendor/sodium.js", "/push.js", "/push-ui.js", "/service-worker.js", "/bootstrap.js"):
+                          "/vendor/sodium.js", "/push.js", "/push-ui.js", "/service-worker.js", "/bootstrap.js",
+                          "/assets/nexo-logo.png", "/assets/nexo-chat-logo.png", "/assets/fonts/InterVariable.woff2",
+                          "/assets/icons/send.svg", "/assets/icons/settings.svg"):
                 response = await api.get(asset)
                 assert response.status_code == 200 and response.headers["x-content-type-options"] == "nosniff"
                 assert response.headers["cache-control"] == "no-store"

@@ -35,7 +35,7 @@ async function open(main) {
 test('acceso automático entre orígenes, sin tokens en URL/storage/DOM; consumo único', async ({ page, context }) => {
   const f = await setup(context), errors = []; page.on('pageerror', error => errors.push(error.message));
   const chat = await open(page); chat.on('pageerror', error => errors.push(error.message));
-  await expect(chat.getByRole('heading', { name: 'Hola, ana.' })).toBeVisible();
+  await expect(chat.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
   await expect(page.getByRole('status')).toHaveText('Acceso confirmado');
   expect(await page.evaluate(() => window.__issues)).toBe(1);
   expect(await chat.evaluate(() => window.opener === null)).toBe(true);
@@ -76,7 +76,7 @@ test('otra ventana del origen permitido no puede entregar un token para el nonce
   await page.evaluate(() => window.open('/?attack=1', '_blank')); const attacker = await attackerPromise;
   await expect(attacker.getByRole('status')).toHaveText('Mensaje ajeno enviado');
   expect(f.calls.some(call => call.path.endsWith('/auth/exchange'))).toBe(false);
-  f.releaseToken(); await expect(chat.getByRole('heading', { name: 'Hola, ana.' })).toBeVisible();
+  f.releaseToken(); await expect(chat.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
   expect(f.calls.filter(call => call.path.endsWith('/auth/exchange'))).toHaveLength(1);
 });
 test('exchange de respuesta perdida no reintenta ni confirma sesión y deja el formulario vacío', async ({ page, context }) => {
@@ -91,7 +91,7 @@ test('perfil caído tras exchange no pide otro bootstrap ni repite emisión', as
   const f = await setup(context, { profileFails: true }); const chat = await open(page);
   await expect(page.getByRole('status')).toHaveText('Acceso confirmado');
   await chat.getByRole('button', { name: 'Consultar mi cuenta' }).click();
-  await expect(chat.getByRole('heading', { name: 'Hola, ana.' })).toBeVisible();
+  await expect(chat.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
   expect(await page.evaluate(() => window.__issues)).toBe(1);
   expect(f.calls.filter(call => call.path.endsWith('/auth/exchange'))).toHaveLength(1);
 });

@@ -16,12 +16,14 @@ async function restore(page, text) {
   await page.getByLabel('Copia cifrada de claves', { exact: true }).setInputFiles(file(text));
   await page.getByLabel('Contraseña de la copia', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Abrir copia y comprobar clave', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Clave preparada en esta sesión' })).toBeVisible();
+  await expect(page.locator('#chat-panel')).toBeVisible();
   await expect(page.locator('#connection')).toContainText('Conectado');
 }
+const registeredAccounts = new WeakMap();
 async function registerKey(page) {
   const nick = 'e2e_' + randomUUID().replaceAll('-', '').slice(0, 12), email = nick + '@example.com';
   await page.goto('/');
+  await page.getByRole('button', { name: 'Crear cuenta', exact: true }).click();
   await page.getByLabel('Nombre de usuario', { exact: true }).fill(nick);
   await page.getByLabel('Correo electrónico', { exact: true }).fill(email);
   const registered = page.waitForResponse(response => pathOf(response).endsWith('/users/register'));
@@ -42,17 +44,30 @@ async function registerKey(page) {
   const backup = await readFile(await (await download).path(), 'utf8');
   await restore(page, backup);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
-  return { id: result.user.id, access: result.tokens.access_token, backup, nick };
+  const account = { id: result.user.id, access: result.tokens.access_token, backup, nick };
+  registeredAccounts.set(page, account); return account;
 }
 async function pair(host, guest, mode) {
-  await host.getByText('Invitar o usar una invitación', { exact: true }).click();
-  await host.getByRole('button', { name: 'Mostrar mis invitaciones' }).click();
+  await host.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
+  await host.getByRole('button', { name: 'Obtener código para invitar' }).click();
   const code = await host.getByLabel(mode === 'stored' ? 'Con historial cifrado' : 'Efímera (requiere conexión simultánea)', { exact: true }).inputValue();
-  await guest.getByText('Invitar o usar una invitación', { exact: true }).click();
-  await guest.getByLabel('Código de invitación', { exact: true }).fill(code);
-  const redeemed = guest.waitForResponse(response => pathOf(response).endsWith('/invitations/redeem'));
-  await guest.getByRole('button', { name: 'Iniciar conversación' }).click();
-  const room = await (await redeemed).json();
+  await host.getByRole('button', { name: 'Conversaciones', exact: true }).click();
+  let room;
+  if (mode === 'stored') {
+    // Compatibilidad del modo histórico existente: el flujo nuevo de UI exige efímero.
+    const response = await guest.request.post('/api/v1/invitations/redeem', {
+      headers: { Authorization: `Bearer ${registeredAccounts.get(guest).access}` }, data: { code },
+    });
+    expect(response.status()).toBe(201); room = await response.json();
+    await guest.getByRole('button', { name: 'Actualizar conversaciones' }).click();
+    await guest.locator('#rooms button').first().click();
+  } else {
+    await guest.getByRole('button', { name: 'Nueva conversación', exact: true }).click();
+    await guest.getByLabel('Código de invitación', { exact: true }).fill(code);
+    const redeemed = guest.waitForResponse(response => pathOf(response).endsWith('/invitations/redeem'));
+    await guest.getByRole('button', { name: 'Iniciar conversación' }).click();
+    room = await (await redeemed).json();
+  }
   await host.getByRole('button', { name: 'Actualizar conversaciones' }).click();
   await host.locator('#rooms button').first().click();
   await expect(host.getByRole('heading', { name: 'Conversación anónima', exact: true })).toBeVisible();
@@ -60,7 +75,7 @@ async function pair(host, guest, mode) {
   return room.id;
 }
 async function send(page, text) {
-  await expect(page.getByRole('button', { name: 'Enviar mensaje', exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Mensaje', { exact: true })).toBeEnabled();
   await page.getByLabel('Mensaje', { exact: true }).fill(text);
   await page.getByRole('button', { name: 'Enviar mensaje', exact: true }).click();
 }
@@ -78,7 +93,7 @@ async function keepGrace(host, guest, keep) {
   // Esperar el plazo normativo permite comprobar la resolución y las cuotas reales.
   for (const page of [host, guest]) {
     await expect(page.locator('#vote')).toContainText(keep ? 'mensajes anteriores conservados' : 'mensajes anteriores eliminados', { timeout: 35000 });
-    await expect(page.getByRole('button', { name: 'Enviar mensaje', exact: true })).toBeEnabled();
+    await expect(page.getByLabel('Mensaje', { exact: true })).toBeEnabled();
   }
 }
 function observe(page) {
@@ -108,6 +123,7 @@ test('stored real: identidad, claves, gracia aprobada, cifrado, ACK, reconexión
   await control(host, 'disconnect');
   await expect.poll(a.tickets).toBeGreaterThan(tickets);
   await expect(host.locator('#connection')).toContainText('Conectado');
+  await host.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
   await host.getByRole('button', { name: 'Bloquear clave', exact: true }).click();
   await expect(host.locator('#messages')).toHaveCount(0);
   await restore(host, account.backup);
@@ -117,6 +133,7 @@ test('stored real: identidad, claves, gracia aprobada, cifrado, ACK, reconexión
   await expect.poll(async () => (await control(host, 'conversation', { id })).stored).toBe(0);
   // El plazo se adelantó en BD: reabrir elimina la vista que conocía el TTL original.
   for (const [p, backup] of [[host, account.backup], [guest, other.backup]]) {
+    await p.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
     await p.getByRole('button', { name: 'Bloquear clave', exact: true }).click();
     await restore(p, backup); await p.locator('#rooms button').first().click();
   }
@@ -136,6 +153,7 @@ test('ephemeral real: offer/ready, sin ciphertext durable, rechazo de gracia y u
   await keepGrace(host, guest, false);
   for (const p of [host, guest]) await expect(p.locator('#messages')).not.toContainText(text);
   host.on('dialog', dialog => dialog.accept());
+  await host.getByLabel('Opciones de conversación', { exact: true }).click();
   await host.getByRole('button', { name: 'Guardar mensajes futuros' }).click();
   await expect(guest.locator('#room-state')).toContainText('Historial cifrado en el servidor');
   const future = 'Mensaje E2E después del upgrade'; await send(guest, future);
@@ -147,6 +165,7 @@ test('ephemeral real: offer/ready, sin ciphertext durable, rechazo de gracia y u
 
 test('dos dispositivos reales: bootstrap firmado, permiso residual, transferencia y borrado tras restaurar', async ({ page, browser }) => {
   const source = page, a = observe(source); const account = await registerKey(source);
+  await source.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
   await source.getByRole('button', { name: 'Enviar claves a otro dispositivo' }).click();
   const targetContext = await browser.newContext(test.info().project.name === 'mobile' ? devices['Pixel 7'] : devices['Desktop Chrome']);
   try {
@@ -157,7 +176,7 @@ test('dos dispositivos reales: bootstrap firmado, permiso residual, transferenci
     const popup = main.waitForEvent('popup'); await main.getByRole('button', { name: 'Abrir chat' }).click(); const target = await popup;
     const b = observe(target);
     await expect(main.getByRole('status')).toHaveText('Acceso confirmado');
-    await expect(target.getByRole('heading', { name: 'Hola, ' + account.nick + '.' })).toBeVisible();
+    await expect(target.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
     expect(target.url()).toBe(process.env.CHAT_E2E_BASE_URL + '/');
     expect(await target.evaluate(() => window.opener === null)).toBe(true);
     const revoked = await source.context().request.get('/api/v1/users/me', { headers: { Authorization: 'Bearer ' + account.access } });

@@ -54,10 +54,10 @@ async function setup(page, { mode = 'stored', role = 'host', status = 'active', 
     ws.send(JSON.stringify(frame('session.ready', {}, null)));
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).click();
+  await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
   await page.getByLabel('Correo electrónico', { exact: true }).fill(user.email);
-  await page.getByLabel('Frase de recuperación', { exact: true }).fill(phrase);
-  await page.getByRole('button', { name: 'Recuperar acceso', exact: true }).last().click();
+  await page.getByLabel('Palabra 1', { exact: true }).fill(phrase);
+  await page.getByRole('button', { name: 'Acceder a mi cuenta', exact: true }).click();
   await page.getByRole('button', { name: 'Gestionar claves de conversación' }).click();
   await page.getByLabel('Copia cifrada de claves').setInputFiles({ name: 'test.chatkey', mimeType: 'application/json', buffer: Buffer.from(backup) });
   await page.getByLabel('Contraseña de la copia', { exact: true }).fill(password);
@@ -68,6 +68,43 @@ async function setup(page, { mode = 'stored', role = 'host', status = 'active', 
   return { key, peer, room, data, sent, sockets, requests, states };
 }
 const sendEvent = (sockets, type, payload) => sockets.at(-1).send(JSON.stringify(frame(type, payload)));
+
+test('buscador, envío con Enter y Shift+Enter funcionan sin enviar contenido vacío', async ({ page }) => {
+  const { key, peer, sent } = await setup(page);
+  const input = page.getByLabel('Mensaje', { exact: true }), send = page.getByRole('button', { name: 'Enviar mensaje', exact: true });
+  await expect(send).toBeDisabled();
+  await input.fill('   '); await input.press('Enter');
+  expect(sent.filter(event => event.type === 'message.send')).toHaveLength(0);
+  await input.fill('Enviado con teclado'); await input.press('Enter');
+  await expect.poll(() => sent.filter(event => event.type === 'message.send').length).toBe(1);
+  expect(peer.decrypt(sent.find(event => event.type === 'message.send').payload)).toBe('Enviado con teclado');
+  await expect(input).toHaveValue(''); await expect(send).toBeDisabled();
+  await input.fill('Primera línea'); await input.press('Shift+Enter'); await input.pressSequentially('Segunda línea');
+  await expect(input).toHaveValue('Primera línea\nSegunda línea');
+  expect(sent.filter(event => event.type === 'message.send')).toHaveLength(1);
+  if (await page.getByRole('button', { name: 'Volver a conversaciones' }).isVisible()) await page.getByRole('button', { name: 'Volver a conversaciones' }).click();
+  await page.getByRole('searchbox', { name: 'Buscar chats' }).fill('sin coincidencias');
+  await expect(page.locator('#rooms')).toContainText('No hay conversaciones');
+  await page.getByRole('searchbox', { name: 'Buscar chats' }).fill('bob');
+  await expect(page.locator('#rooms button')).toHaveCount(1);
+  key.lock(); peer.lock();
+});
+
+test('los mensajes nuevos no desplazan al usuario que está leyendo arriba', async ({ page }) => {
+  const { key, peer, sockets } = await setup(page);
+  for (let i = 0; i < 14; i++) sendEvent(sockets, 'message.new', {
+    message_id: crypto.randomUUID(), sender_role: 'guest', sent_at: new Date(Date.now() + i).toISOString(),
+    ...peer.encrypt(`Mensaje ${i}: ` + 'Contenido de lectura. '.repeat(8), key.publicKey),
+  });
+  await expect(page.locator('#messages .message')).toHaveCount(14);
+  const list = page.locator('#messages');
+  expect(await list.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  await list.evaluate(element => { element.scrollTop = 0; });
+  sendEvent(sockets, 'message.new', { message_id: crypto.randomUUID(), sender_role: 'guest', sent_at: new Date(Date.now() + 100).toISOString(), ...peer.encrypt('Nuevo mensaje mientras lees', key.publicKey) });
+  await expect(list).toContainText('Nuevo mensaje mientras lees');
+  expect(await list.evaluate(element => element.scrollTop)).toBe(0);
+  key.lock(); peer.lock();
+});
 
 test('stored cifra, descifra sin HTML, confirma y reintenta el mismo envío tras un corte', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -95,6 +132,7 @@ test('stored cifra, descifra sin HTML, confirma y reintenta el mismo envío tras
   expect(requests.filter(request => request.path.endsWith('/ws-ticket'))).toHaveLength(2);
   expect(requests.every(request => !request.body?.includes('Mensaje privado'))).toBe(true);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+  await page.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
   await page.getByRole('button', { name: 'Bloquear clave', exact: true }).click();
   await expect(page.getByLabel('Mensajes', { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]); key.lock(); peer.lock();
@@ -119,10 +157,11 @@ test('ephemeral negocia ready y elimina gracia al resolver la votación, incluso
   data.vote.status = 'rejected';
   sendEvent(sockets, 'vote.updated', data.vote);
   await expect(page.getByLabel('Mensajes', { exact: true })).not.toContainText('Gracia efímera');
-  await expect(page.getByRole('button', { name: 'Enviar mensaje', exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Mensaje', { exact: true })).toBeEnabled();
   sendEvent(sockets, 'vote.opened', { ...data.vote, status: 'open' });
   await expect(page.getByText('Votación: mensajes anteriores eliminados.', { exact: true })).toBeVisible();
   page.on('dialog', dialog => dialog.accept());
+  await page.getByLabel('Opciones de conversación', { exact: true }).click();
   await page.getByRole('button', { name: 'Guardar mensajes futuros', exact: true }).click();
   expect(room.mode).toBe('stored');
   await expect(page.locator('#room-state')).toContainText('Historial cifrado en el servidor');
@@ -132,9 +171,12 @@ test('ephemeral negocia ready y elimina gracia al resolver la votación, incluso
 test('rol guest, invitaciones y mensajes corruptos respetan permisos y no generan ACK', async ({ page }) => {
   const { key, peer, sockets, sent } = await setup(page, { role: 'guest', status: 'pending' });
   await expect(page.getByRole('button', { name: 'Aceptar conversación', exact: true })).toHaveCount(0);
-  await page.getByText('Invitar o usar una invitación', { exact: true }).click();
-  await page.getByRole('button', { name: 'Mostrar mis invitaciones', exact: true }).click();
+  await page.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
+  await page.getByRole('button', { name: 'Obtener código para invitar', exact: true }).click();
   await expect(page.getByLabel('Con historial cifrado', { exact: true })).toHaveValue('stored-synthetic-code');
+  await page.getByRole('button', { name: 'Conversaciones', exact: true }).click();
+  if (await page.getByRole('button', { name: 'Volver a conversaciones' }).isVisible()) await page.getByRole('button', { name: 'Volver a conversaciones' }).click();
+  await page.getByRole('button', { name: 'Nueva conversación', exact: true }).click();
   await page.getByLabel('Código de invitación', { exact: true }).fill('synthetic-invitation');
   await page.getByRole('button', { name: 'Iniciar conversación', exact: true }).click();
   const message_id = crypto.randomUUID();
@@ -152,7 +194,7 @@ test('revocación del socket limpia textos y vuelve al acceso', async ({ page })
     ...peer.encrypt('Texto para limpiar', key.publicKey) });
   await expect(page.getByLabel('Mensajes', { exact: true })).toContainText('Texto para limpiar');
   sockets.at(-1).close({ code: 4401 });
-  await expect(page.getByRole('heading', { name: 'Vuelve a tu cuenta' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bienvenido de nuevo' })).toBeVisible();
   await expect(page.getByLabel('Mensajes', { exact: true })).toHaveCount(0);
   expect(await page.locator('body').innerText()).not.toContain('Texto para limpiar');
   key.lock(); peer.lock();

@@ -1,5 +1,149 @@
 # Validación de la entrega
 
+## Apariencia y flujos Nexo · 2026-10-15
+
+Aplicadas las referencias PDF de bienvenida, registro, acceso, perfil y chat a
+la aplicación real. Fondo azul noche, Inter local, recursos de marca extraídos
+de los PDF y Feather con licencia. No hay CDN ni conversaciones de muestra en los
+assets de producción. Nuevos modales accesibles y navegación cuenta/chat que
+conserva la clave abierta; perfil editable por PATCH existente; dos tarjetas de
+invitación, buscador, teclado y scroll. Compatibilidad: email/24 palabras, códigos
+opacos reales y estado de conexión propia; avatar de iniciales. No hay migración
+ni cambio de protocolo, dependencia npm/Python o custodia de privadas.
+
+Validación de este cambio:
+
+- **68 recorridos Chromium correctos** (escritorio y móvil), más **12 de chat**
+  repetidos tras el ajuste visual final de las burbujas. Los ocho nuevos recorridos
+  cubren modales/Escape/retirada de palabras, perfil, búsqueda, Enter/Shift+Enter,
+  rechazo de vacío y scroll mientras se lee. Evidencias: `artifacts/nexo/browser-final.log`,
+  `artifacts/nexo/chat-final.log`, `artifacts/nexo/identity-ui.log` e `interactions.log`.
+- **50 pruebas Node correctas**, incluyendo interoperabilidad real con el cliente
+  Python: `artifacts/nexo/node.log`.
+- **Suite E2E de seis recorridos correcta**, con API, WebSocket, PostgreSQL 18.6 y
+  Redis 8.0.5 reales aislados; 1 prueba coordinadora en 180,78 s. Incluye registro,
+  verificación, claves, invitaciones, stored/ephemeral, votos, reconexión,
+  expiración y transferencia entre dispositivos con bootstrap firmado. Evidencias:
+  `artifacts/nexo/web-e2e.log` y `/tmp/chat-persistence-test.HXs6sg`. Procesos parados
+  al terminar; no se usan datos del usuario ni proveedores externos.
+- Capturas de los cinco estados en 1440 × 900 y 393 × 852, comparación conjunta con
+  los PDF y recortes de detalle. Sin desbordamiento horizontal ni errores de consola.
+  `web/scripts/capture-nexo.mjs` reproduce la evidencia con datos sintéticos;
+  `artifacts/nexo/implementation/console.json` queda vacío de errores.
+- Revisión visual [design-qa.md](../design-qa.md): `final result: passed`.
+- Sintaxis JS, Ruff en los archivos Python modificados, Make en seco y
+  `git diff --check` correctos. Caddy expone solo los assets locales aprobados y
+  añade `font-src 'self'` / `img-src 'self' blob:`; se amplía su smoke de assets.
+
+El Docker/Caddy del usuario no se ha recargado desde aquí. `sudo make start reload-web`
+aplica los archivos montados y sus cabeceras; después hay que volver a acceder al
+recargar la página, porque los tokens siguen solo en memoria. La comprobación de
+las imágenes fijadas y el Caddy real del despliegue queda para CI/host. Los límites
+generales de N9, proveedores, carga y producción continúan vigentes.
+
+## Sesión, código de invitación y clave pública visibles · 2026-10-07
+
+La cabecera distingue «Sin sesión» de «Sesión iniciada · nick», también en móvil.
+La cuenta autenticada retira la introducción de registro y ocupa el espacio de
+conversaciones; al cerrar o perder sesión restaura el acceso y elimina códigos.
+
+«Obtener código para invitar» aparece en la cuenta verificada. Consulta la pública
+propia antes de obtener códigos; si falta, abre el formulario de creación y
+comprobación de la copia, evitando compartir una invitación cuyo canje fallaría.
+Con una pública existente permite invitar aunque la privada esté bloqueada.
+Se muestran códigos stored/ephemeral con copia explícita y renovación. La gestión
+de claves muestra la pública y su botón de copia incluso antes de desbloquear.
+Clipboard denegado selecciona el campo para copiarlo manualmente. No cambian
+tokens, custodia de privadas, protocolo, cuotas ni endpoints.
+
+Validación:
+
+- **50 pruebas Node correctas**, incluida interoperabilidad real con el cliente
+  Python del entorno del proyecto (`CHAT_TEST_PYTHON`). Evidencia:
+  `artifacts/n9/account-node.log`.
+- **60 recorridos Chromium correctos** en escritorio y viewport móvil. Seis nuevos
+  comprueban sesión visible, invitaciones sin abrir privadas, ausencia de pública,
+  clipboard denegado, renovación, logout y diseño sin desbordamiento. Las pruebas
+  existentes de claves también comprueban que la pública bloqueada sea visible.
+- Suite **E2E real correcta**, seis recorridos con API/WS y PostgreSQL/Redis
+  aislados: stored/ephemeral, invitación/canje, gracia/votación, transferencia y
+  reconexión. Test coordinador: 1 correcto en 178,07 s. Evidencias:
+  `artifacts/n9/account-web-e2e.log` y `/tmp/chat-persistence-test.42X5Wn`.
+- Sintaxis JavaScript y `git diff --check` correctos. Sin dependencias nuevas.
+
+Los ensayos usan datos sintéticos. Los recorridos Chromium generales interceptan
+REST/WS; la suite E2E usa un buzón de prueba y emisor fixture, sin proveedores
+externos. No se cambió ningún contenedor del usuario. Los assets están montados
+por Caddy desde `web/public`; recargar requiere volver a acceder porque la sesión
+se conserva únicamente en memoria, como antes. El servicio local no respondió
+durante la comprobación final de assets y no se declara un despliegue verificado.
+
+## Publicación del puerto del buzón local · 2026-10-07
+
+El chat responde HTTP 200 en `127.0.0.1:18080`, pero `18025` no tiene listener y
+rechaza la conexión. Docker sigue inaccesible para este agente; sudo requiere
+autenticación interactiva. No se confirma el estado del contenedor del usuario.
+
+Corregida la conexión de Mailpit: el servicio solo pertenecía a `backend`, una
+red `internal: true`. Docker puede aceptar el mapeo y omitir su publicación cuando
+el contenedor no tiene una red con gateway externo, tal como se reproduce en
+[Moby #53256](https://github.com/moby/moby/discussions/53256). Se conecta también
+a la red bridge `egress`, igual que Caddy. La UI conserva el bind explícito
+`127.0.0.1:18025:8025`; SMTP continúa sin publicar puertos del host. PostgreSQL y
+Redis conservan su red exclusivamente interna. Esto corrige una causa compatible
+con el síntoma; no sustituye la inspección del contenedor real.
+
+Añadida una comprobación de regresión: cada servicio con puertos publicados debe
+pertenecer al menos a una red no interna, en Compose local y producción. Aplicar
+con `sudo make start` recrea los servicios cuya configuración cambió; no requiere
+reconstrucción ni borrado de volúmenes. El arranque real del usuario sigue pendiente
+de disponer de acceso al daemon Docker.
+
+Las **6 pruebas de Compose pasan**, junto a Ruff del archivo modificado, validación
+Compose local/test/producción y `git diff --check`. Se intentó aplicar el arranque
+con `sudo -n make start`; no se ejecutó porque sudo requiere autenticación.
+
+## Registro local con buzón SMTP · 2026-10-06
+
+Diagnosticado el marcador `smtp://pendiente.invalid:587` en la configuración
+local: el registro intenta enviar el código antes del commit y devuelve 503
+cuando ese proveedor inexistente falla. Arrancar API/PostgreSQL/Redis no configura
+por sí solo el correo.
+
+El override de desarrollo incorpora Mailpit 1.31.4 con digest oficial fijado.
+Su buzón escucha solo en `127.0.0.1:18025`; SMTP no publica puertos del host.
+Los mensajes quedan en tmpfs, sin relay externo. La API espera su readiness.
+`CHAT_LOCAL_MAILBOX=1` sustituye únicamente el marcador exacto original y solo
+con `APP_ENV=development`. Un SMTP configurado conserva TLS/autenticación;
+producción rechaza el indicador del buzón local antes del arranque.
+
+Validación de este cambio:
+
+- **209 unitarias correctas**, 101 integraciones excluidas en esa ejecución.
+  Once casos nuevos cubren activación y aislamiento de entornos, conservación
+  del SMTP real, errores seguros, puertos loopback y exclusión de producción.
+- Ruff global, mypy en 53 módulos, sintaxis de scripts sh, Compose local/test/
+  producción y `git diff --check` correctos.
+- Mailpit oficial descargado y verificado con el SHA-256 publicado en su release.
+  Readiness, envío SMTP real y recuperación del código por la API del buzón pasan.
+- **11 integraciones correctas**, incluido el registro con el mailer de producto,
+  correo SMTP real, verificación de un uso y ticket permitido solo tras verificar.
+  También se repiten las diez integraciones de identidad existentes. PostgreSQL
+  18.6/Redis 8.0.5 temporales con sockets Unix y Mailpit en loopback; únicamente
+  resolución del nombre `mailpit` a loopback adaptada para el runner sin Docker.
+  Evidencia: `artifacts/n9/local-registration-integration.log` y
+  `/tmp/chat-persistence-test.XJhLbP`. Todos los procesos temporales se detuvieron.
+- La prueba nueva se incorpora al runner de contenedores, con Mailpit real y sin
+  puertos publicados. La auditoría de imágenes incorpora también el buzón local.
+- Trivy 0.74.0 no detecta vulnerabilidades críticas ni secretos en la imagen
+  Mailpit fijada en esta consulta. Informes locales en
+  `artifacts/n9/mailpit-vuln.json` y `artifacts/n9/mailpit-secrets.json`.
+
+No se pudieron reiniciar los contenedores del usuario: el daemon exige sudo
+interactivo. Ejecutar `sudo make up` aplica el cambio conservando los volúmenes
+y secretos existentes. La prueba usa ASGITransport para los handlers y no
+acredita arranque Docker en este host ni entrega de correo a un proveedor externo.
+
 ## Instalador Bash para servidor Linux · 2026-10-05
 
 Creado `instalador-servidor/` y excluido por completo de Git. Las plantillas y

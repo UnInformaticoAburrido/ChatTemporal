@@ -122,12 +122,21 @@ def read_secret(name: str) -> str:
     return Path(os.environ[name + "_FILE"]).read_text().strip()
 
 
+def use_local_mailbox(smtp_url: str) -> bool:
+    """El buzón de desarrollo sustituye únicamente el marcador local original."""
+    return (os.environ.get("APP_ENV") == "development"
+            and os.environ.get("CHAT_LOCAL_MAILBOX") == "1"
+            and smtp_url == "smtp://pendiente.invalid:587")
+
+
 def validate_secrets(settings: Settings) -> None:
     """Antes de abrir puertos (§27.2); no imprimir excepciones con sus valores."""
     environment = os.environ.get("APP_ENV", "production")
     if environment not in {"production", "staging", "development", "test"}:
         raise ValueError("APP_ENV inválido")
     production = environment == "production"
+    if production and os.environ.get("CHAT_LOCAL_MAILBOX") == "1":
+        raise ValueError("El buzón local no está permitido en producción")
     for name, schemes in (("DATABASE_URL", {"postgresql"}), ("REDIS_URL", {"redis"}),
                           ("SMTP_URL", {"smtp", "smtps"})):
         parsed = urlsplit(read_secret(name))

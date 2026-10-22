@@ -30,6 +30,7 @@ quedan completar el cliente, proveedores reales, carga y comprobaciones del host
 - [N9: CI, cobertura y puertas pendientes de release](docs/N9_HOMOLOGACION_RELEASE.md)
 - [Claves del cliente: copias cifradas y publicación inicial](docs/CLAVES_CLIENTE.md)
 - [Cliente web: identidad y próximos bloques](docs/CLIENTE_WEB.md)
+- [Apariencia Nexo y compatibilidad con las cuentas existentes](docs/NEXO_UI.md)
 - [Transferencia de claves web entre dispositivos](docs/TRANSFERENCIAS_WEB.md)
 - [Notificaciones web: activación, privacidad y límites](docs/PUSH_WEB.md)
 - [Adaptador de acceso desde la aplicación principal](docs/INTEGRACION_MAIN_APP.md)
@@ -77,19 +78,37 @@ curl http://127.0.0.1:18080/health/live
 ```
 
 La preparación local no sobrescribe claves existentes. En este espacio de trabajo
-ya se ha ejecutado; puedes comenzar por `docker compose ... up`. SMTP local queda
-como proveedor pendiente: **el registro devuelve 503 y hace rollback hasta
-configurar un SMTP válido**. No se simulan envíos de correo en la aplicación.
+ya se ha ejecutado; puedes comenzar por `docker compose ... up`. El override local
+arranca Mailpit para recibir los correos de verificación: **puedes registrarte sin
+contratar un proveedor SMTP**. Abre `http://localhost:18025`, busca el correo para
+tu dirección y copia el código en el formulario de verificación del chat. El
+correo queda en ese buzón local, no se envía a tu cuenta externa. Los mensajes del
+buzón se pierden al reiniciarlo; puedes solicitar otro código desde el chat.
+La sustitución solo se activa en desarrollo cuando `secrets/smtp_url` conserva
+el marcador `smtp://pendiente.invalid:587`; un SMTP real sigue utilizando TLS y
+sus credenciales. Producción requiere un proveedor real y no admite el buzón local.
+El puerto `18025` del equipo se redirige al `8025` del contenedor. Mailpit se
+conecta a las redes `backend` y `egress`: una red exclusivamente interna puede
+impedir que Docker publique el puerto. Si el contenedor ya existía con esa
+configuración, `sudo make start` lo recrea y aplica la corrección, sin borrar los
+datos del chat. El buzón también se puede abrir en `http://127.0.0.1:18025/`.
 Abrir `http://localhost:18080/` para el cliente web. Tras verificar el correo y
 abrir una copia de claves, aparecen las conversaciones e invitaciones;
 ver [cliente web](docs/CLIENTE_WEB.md).
 
 Para construir las imágenes y arrancar por primera vez: `make up`.
+Si ya habías arrancado antes de incorporar el buzón, vuelve a ejecutar
+`sudo make up` para aplicar el override y crear Mailpit. Si el puerto del buzón
+está ocupado, usa `sudo env CHAT_MAIL_PORT=18026 make up` y abre ese puerto.
 Una vez construidas, iniciar o volver a iniciar con:
 
 ```bash
 make start
 ```
+
+Después de actualizar las rutas o cabeceras web de Caddy, aplicar la configuración
+con `sudo make start reload-web`. La apariencia Nexo utiliza imágenes y fuente
+locales, sin CDN. Después recarga la página; la sesión sigue viviendo en memoria.
 
 Usa las imágenes existentes, aplica la configuración y espera a que los servicios
 estén disponibles. Su equivalente sin Make es:
@@ -251,7 +270,7 @@ Rutas autenticadas bajo `/api/v1`:
 |---|---|
 | GET `/invitations/me` | Crea bajo demanda y devuelve dos códigos estables de 83 caracteres; exige email verificado |
 | POST `/invitations/regenerate` | Revoca ambos códigos y crea una nueva identidad/generación en una transacción |
-| POST `/invitations/redeem` | Recibe `{code}`; exige email verificado y devuelve conversación pending con `host_public_key` |
+| POST `/invitations/redeem` | Recibe `{code, expected_mode?}`; exige email verificado y devuelve conversación pending con `host_public_key`. Un modo distinto devuelve 400 `INVITATION_MODE_MISMATCH` antes de crear la conversación |
 | POST `/conversations/{id}/accept` | Solo host; activa la conversación y abre un voto de 30 s con censo congelado |
 | POST `/conversations/{id}/upgrade` | Solo host en active; cambia ephemeral→stored para mensajes posteriores |
 | DELETE `/conversations/{id}` | Cierre unilateral permanente |

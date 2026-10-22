@@ -50,6 +50,7 @@ def test_local_override_only_exposes_loopback() -> None:
     assert len(ports) == 1 and ports[0]["host_ip"] == "127.0.0.1" and ports[0]["published"] == "18080"
     for name in ("python", "worker", "migrate"):
         assert services[name]["environment"]["APP_ENV"] == "development"
+        assert services[name]["environment"]["CHAT_LOCAL_MAILBOX"] == "1"
         assert any(v["target"] == "/etc/chat/settings.toml" and v["source"].endswith("settings.local.toml")
                    for v in services[name]["volumes"])
     custom = config(local=True, port="18081")["services"]
@@ -57,3 +58,39 @@ def test_local_override_only_exposes_loopback() -> None:
     assert custom["caddy"]["ports"][0]["target"] == 8080
     for name in ("python", "worker", "migrate"):
         assert custom[name]["environment"]["CHAT_LOCAL_HTTP_PORT"] == "18081"
+
+
+def test_local_mailbox_is_private_volatile_and_gates_api() -> None:
+    services = config(local=True)["services"]
+    mailbox = services["mailpit"]
+    assert "@sha256:" in mailbox["image"]
+    assert mailbox["networks"] == {"backend": None, "egress": None}
+    assert mailbox["read_only"] and not mailbox.get("volumes")
+    assert mailbox["ports"] == [{"mode": "ingress", "host_ip": "127.0.0.1",
+                                  "target": 8025, "published": "18025", "protocol": "tcp"}]
+    assert mailbox["environment"]["MP_DATABASE"].startswith("/tmp/")
+    assert mailbox["environment"]["MP_QUIET"] == "true"
+    assert services["python"]["depends_on"]["mailpit"]["condition"] == "service_healthy"
+    production = config()["services"]
+    assert "mailpit" not in production
+    for name in ("python", "worker", "migrate"):
+        assert "CHAT_LOCAL_MAILBOX" not in production[name]["environment"]
+
+
+def test_container_tests_do_not_publish_mailbox_ports() -> None:
+    services = json.loads(subprocess.check_output([
+        "docker", "compose", "-f", str(ROOT / "docker-compose.yml"),
+        "-f", str(ROOT / "docker-compose.local.yml"), "-f", str(ROOT / "docker-compose.test.yml"),
+        "config", "--format", "json",
+    ], cwd=ROOT))["services"]
+    assert not services["mailpit"].get("ports")
+
+
+def test_published_ports_have_a_non_internal_network() -> None:
+    # Docker puede aceptar ports pero no publicarlos si todas las redes son internas.
+    for local in (False, True):
+        compose = config(local=local)
+        for name, service in compose["services"].items():
+            if service.get("ports"):
+                assert any(not compose["networks"][network].get("internal", False)
+                           for network in service["networks"]), name

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from mnemonic import Mnemonic
 
 from chat.app import create_app
-from chat.config import Settings
+from chat.config import Settings, validate_secrets
 from chat.errors import APIError
 from chat.identity_crypto import Tokens, hash_phrase, new_phrase, opaque_token, token_hash, verify_phrase
 from chat.identity_redis import client_ip
@@ -142,3 +142,76 @@ def test_smtp_uses_tls_and_does_not_expose_provider_errors(local_settings: Setti
     with pytest.raises(APIError) as error:
         asyncio.run(SMTPMailer(local_settings.email_from).verification("a@example.com", "test-token"))
     assert error.value.status == 503 and "SECRET_PROVIDER" not in str(error.value)
+
+
+@pytest.mark.parametrize("environment,enabled,uses_mailbox", [
+    ("development", "1", True), ("development", "0", False),
+    ("test", "1", False), ("staging", "1", False), ("production", "1", False),
+])
+def test_local_mailbox_requires_development_and_explicit_override(
+    local_settings: Settings, monkeypatch: pytest.MonkeyPatch,
+    environment: str, enabled: str, uses_mailbox: bool,
+) -> None:
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("APP_ENV", environment)
+    monkeypatch.setenv("CHAT_LOCAL_MAILBOX", enabled)
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    smtp = MagicMock(return_value=connection)
+    monkeypatch.setattr("chat.mailer.smtplib.SMTP", smtp)
+    asyncio.run(SMTPMailer(local_settings.email_from).verification("a@example.com", "test-token"))
+    assert smtp.call_args.args == (("mailpit", 1025) if uses_mailbox else ("pendiente.invalid", 587))
+    assert connection.starttls.call_count == (0 if uses_mailbox else 1)
+    connection.login.assert_not_called()
+    assert "test-token" in connection.send_message.call_args.args[0].get_content()
+
+
+@pytest.mark.parametrize("smtp_url,uses_ssl", [
+    ("smtp://user:private-password@smtp.example.com:587", False),
+    ("smtps://user:private-password@smtp.example.com:465", True),
+])
+def test_local_mailbox_preserves_configured_external_smtp(
+    local_settings: Settings, monkeypatch: pytest.MonkeyPatch, smtp_url: str, uses_ssl: bool,
+) -> None:
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("CHAT_LOCAL_MAILBOX", "1")
+    Path(os.environ["SMTP_URL_FILE"]).write_text(smtp_url)
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    smtp = MagicMock(return_value=connection)
+    smtp_ssl = MagicMock(return_value=connection)
+    monkeypatch.setattr("chat.mailer.smtplib.SMTP", smtp)
+    monkeypatch.setattr("chat.mailer.smtplib.SMTP_SSL", smtp_ssl)
+    asyncio.run(SMTPMailer(local_settings.email_from).verification("a@example.com", "test-token"))
+    if uses_ssl:
+        smtp.assert_not_called()
+        assert smtp_ssl.call_args.args == ("smtp.example.com", 465)
+        connection.starttls.assert_not_called()
+    else:
+        smtp_ssl.assert_not_called()
+        assert smtp.call_args.args == ("smtp.example.com", 587)
+        connection.starttls.assert_called_once()
+    connection.login.assert_called_once_with("user", "private-password")
+
+
+def test_local_mailbox_failure_keeps_safe_unavailability(
+    local_settings: Settings, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("CHAT_LOCAL_MAILBOX", "1")
+    monkeypatch.setattr("chat.mailer.smtplib.SMTP", MagicMock(side_effect=OSError("PRIVATE_PROVIDER_DETAIL")))
+    with pytest.raises(APIError) as error:
+        asyncio.run(SMTPMailer(local_settings.email_from).verification("a@example.com", "test-token"))
+    assert error.value.status == 503 and "PRIVATE_PROVIDER" not in str(error.value)
+
+
+def test_production_rejects_local_mailbox_before_startup(
+    local_settings: Settings, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CHAT_LOCAL_MAILBOX", "1")
+    with pytest.raises(ValueError, match="buzón local"):
+        validate_secrets(local_settings)

@@ -19,6 +19,7 @@ class InvitationCodes(StrictDTO):
 class Redeem(StrictDTO):
     # La longitud/forma se valida en el codec para devolver INVITATION_INVALID (400).
     code: str = Field(repr=False)
+    expected_mode: Literal["ephemeral", "stored"] | None = None
 
 
 class RedeemedConversation(ConversationSummary):
