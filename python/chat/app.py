@@ -19,6 +19,7 @@ from chat.logging import event
 from chat.mailer import Mailer
 from chat.protocol import uuid4_value
 from chat.resource_api import resource_router
+from chat.vote_api import vote_router
 from chat.websocket_api import install_websocket
 
 
@@ -32,7 +33,7 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
         app.state.draining = True
 
     application = FastAPI(
-        title="Chat · mensajería WebSocket", version="0.5.0",
+        title="Chat · mensajería y votaciones", version="0.6.0",
         docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
     )
     application.state.draining = False
@@ -103,5 +104,6 @@ def create_app(settings: Settings | None = None, *, mailer: Mailer | None = None
     application.include_router(identity_router(identity, settings))
     application.include_router(resource_router(identity, settings))
     application.include_router(conversation_router(identity, settings))
+    application.include_router(vote_router(identity, settings))
     install_websocket(application, settings)
     return application

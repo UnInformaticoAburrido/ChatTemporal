@@ -305,6 +305,12 @@ class Messages:
                 JOIN conversation_members sender ON sender.conversation_id=c.id AND sender.user_id=e.sender_id
                 WHERE c.id=%s AND c.mode='stored' AND viewer.membership_status<>'left'
                 AND m.content_expires_at>statement_timestamp() AND e.expires_at>statement_timestamp()
+                AND (NOT m.is_grace_message OR NOT EXISTS (
+                    SELECT 1 FROM votes v WHERE v.conversation_id=c.id
+                    AND v.subject='retain_grace_messages' AND (
+                        v.status='rejected' OR (v.status='open' AND v.expires_at<=statement_timestamp()
+                            AND 2*(SELECT count(*) FROM vote_ballots b WHERE b.vote_id=v.id AND b.choice)
+                                <=v.eligible_members))))
                 AND (%s::timestamptz IS NULL OR (e.sent_at,e.id)<(%s,%s::uuid))
                 ORDER BY e.sent_at DESC,e.id DESC LIMIT %s""",
                 (user_id, conversation_id, before.timestamp if before else None,

@@ -47,12 +47,21 @@ Añade el censo de los votos abiertos al aceptar una conversación; no añade
 bibliotecas. Ejecutar la migración explícita aunque el contenedor migrate anterior
 figure como completado. Las pruebas cubren actualización desde 0003 y desde cero.
 Los votos previos creados fuera de los endpoints de N4 no reciben un censo inventado;
-no se consideran compatibles con el futuro flujo de votación sin revisión.
+no se consideran compatibles con el flujo de votación sin revisión.
 
 N5 requiere **0005_delivery_mode**, sin nuevas bibliotecas de runtime. Reiniciar
 API y worker después de la migración. `mode_at_send` es NULL para eventos antiguos:
 no usar el modo actual de la conversación para reconstruirlo. Deadline y conexión
 se guardan en message_deliveries; el ciphertext efímero nunca se añade a PostgreSQL.
+
+N6 requiere **0006_ballot_electorate**, sin nuevas dependencias. Cambia la FK de
+`vote_ballots.user_id` a `(vote_id,user_id)` del censo, para que borrar una cuenta
+no cambie los resultados. La nueva FK es `NOT VALID`: comprueba las escrituras
+nuevas y conserva sin reinterpretar posibles ballots externos anteriores a N4.
+Revisar esos datos antes de `VALIDATE CONSTRAINT vote_ballots_electorate_fkey`;
+no reconstruir el censo desde miembros actuales. API devuelve `VOTE_UNSUPPORTED`
+y worker registra `vote_resolution_failed` si política/censo no son compatibles.
+Reiniciar API y worker tras migrar para cargar las rutas de votación y el scheduler.
 
 En este despliegue inicial se admite una ventana breve de mantenimiento:
 
@@ -156,8 +165,19 @@ comandos que copien tokens/URLs secretas a logs o historial de terminal.
 ## Mantenimiento y observabilidad
 
 Worker borra contenido expirado, metadatos, verificaciones y familias de refresh
-fuera de auditoría. N5 añade reconciliación de entregas efímeras entre purgas,
-con un intervalo objetivo de un segundo. **El cierre de votos sigue pendiente de N6**.
+fuera de auditoría. N5 añade reconciliación de entregas efímeras y N6 cierra votos
+vencidos entre purgas, con pausa objetivo de un segundo y lotes de hasta 1000 votos.
+No es una garantía de latencia bajo carga: el deadline de 30 s se comprueba en
+las operaciones, independientemente de la demora del worker. GET y POST también
+resuelven votos vencidos; el historial oculta gracia rechazada desde el deadline.
+El cierre y borrado stored son atómicos. `closed_at=expires_at` representa el
+instante lógico de resolución, no la hora de ejecución del lote.
+
+`vote_publish_failed` indica que el resultado hizo commit pero su aviso falló.
+Los clientes recuperan el resultado mediante GET; Pub/Sub no es durable.
+`vote_resolution_failed` requiere comprobar disponibilidad de PostgreSQL o
+compatibilidad del censo/política. El heartbeat de limpieza no mide retraso de
+votos: métricas/alertas completas de scheduler continúan en N8.
 
 `docker compose --profile observability up -d` activa Prometheus interno. Métricas
 actuales: readiness y edad de la última purga. Alertas iniciales: indisponibilidad
