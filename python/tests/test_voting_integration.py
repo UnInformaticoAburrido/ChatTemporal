@@ -334,3 +334,31 @@ def test_websocket_personal_snapshots_and_end_to_end_grace(n4: tuple, mode: str)
             await b.send(json.dumps(sending(conversation)))
             assert (await received(a, "message.new"))["payload"]["message_id"] != identifier
     asyncio.run(run())
+
+
+def test_current_conversation_vote_visibility_resolution_and_membership(n4: tuple) -> None:
+    settings, users, _, tokens = n4
+
+    async def run() -> None:
+        async with client(settings, tokens[0]) as host, client(settings, tokens[1]) as guest, \
+                client(settings, tokens[2]) as stranger:
+            conversation = (await contact(host, guest, 'ephemeral'))['id']
+            path = f'/api/v1/conversations/{conversation}/vote'
+            pending = await host.get(path)
+            assert pending.status_code == 200 and pending.json() is None
+            assert (await stranger.get(path)).status_code == 404
+            assert (await host.get(f'/api/v1/conversations/{uuid4()}/vote')).status_code == 404
+            vote = (await host.post(f'/api/v1/conversations/{conversation}/accept')).json()['vote']['id']
+            await host.post(f'/api/v1/votes/{vote}/ballots', json={'choice': True})
+            current = (await host.get(path)).json()
+            assert current['id'] == vote and current['my_vote'] is True and current['status'] == 'open'
+            assert (await guest.get(path)).json()['my_vote'] is None
+            expire(vote)
+            result = (await guest.get(path)).json()
+            assert result['status'] == 'rejected' and result['no_votes'] == 1
+            assert (await host.get(path)).json()['my_vote'] is True
+            with psycopg.connect(read_secret('DATABASE_URL')) as db:
+                db.execute("UPDATE conversation_members SET membership_status='left' WHERE user_id=%s AND conversation_id=%s",
+                           (users[0], UUID(conversation)))
+            assert (await host.get(path)).status_code == 404
+    asyncio.run(run())

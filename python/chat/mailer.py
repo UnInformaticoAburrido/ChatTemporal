@@ -7,7 +7,7 @@ from email.message import EmailMessage
 from typing import Protocol
 from urllib.parse import unquote, urlsplit
 
-from chat.config import read_secret
+from chat.config import read_secret, use_local_mailbox
 from chat.errors import unavailable
 
 
@@ -24,15 +24,16 @@ class SMTPMailer:
 
     def _send(self, email: str, token: str) -> None:
         try:
-            url = urlsplit(read_secret("SMTP_URL"))
+            smtp_url = read_secret("SMTP_URL")
+            local_mailbox = use_local_mailbox(smtp_url)
+            url = urlsplit("smtp://mailpit:1025" if local_mailbox else smtp_url)
             if url.scheme not in {"smtp", "smtps"} or not url.hostname:
                 raise ValueError()
             message = EmailMessage()
             message["From"] = self.sender
             message["To"] = email
             message["Subject"] = "Verificación de tu cuenta de chat"
-            # DEC-38: aún no hay frontend ni URL de verificación especificada.
-            # Enviar el token para POST /users/verify-email, sin inventar un enlace.
+            # El cliente permite introducir este código en su formulario de verificación.
             message.set_content(f"Tu código de verificación es:\n\n{token}\n\nCaduca en 30 minutos.")
             context = ssl.create_default_context()
             connection: smtplib.SMTP
@@ -41,7 +42,7 @@ class SMTPMailer:
             else:
                 connection = smtplib.SMTP(url.hostname, url.port or 587, timeout=5)
             with connection:
-                if url.scheme == "smtp":
+                if url.scheme == "smtp" and not local_mailbox:
                     connection.starttls(context=context)
                 if url.username is not None:
                     connection.login(unquote(url.username), unquote(url.password or ""))

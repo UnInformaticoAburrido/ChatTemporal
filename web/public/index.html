@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Nexo · Identidad y mensajería</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body data-view="welcome" data-session="inactive">
+  <a class="skip" href="#main">Ir al contenido</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Nexo, inicio"><img src="/assets/nexo-logo.png" width="125" height="42" alt="Nexo"></a>
+    <nav class="guest-nav" aria-label="Navegación principal">
+      <button class="nav-link" id="privacy-link" type="button">Privacidad</button>
+      <button class="nav-link" id="how-link" type="button">Cómo funciona</button>
+      <details class="guest-more" id="guest-more"><summary aria-label="Más información"><img class="icon" src="/assets/icons/more-horizontal.svg" alt=""></summary><div><button id="mobile-privacy" class="nav-link" type="button">Privacidad</button><button id="mobile-how" class="nav-link" type="button">Cómo funciona</button></div></details>
+      <a class="secondary" id="sign-in" href="#acceso" role="button" data-route="acceso">Iniciar sesión</a>
+    </nav>
+    <nav class="member-nav" aria-label="Navegación de la cuenta" hidden>
+      <a class="nav-link" id="nav-chat" href="#chat" role="button" data-route="chat">Conversaciones</a>
+      <a class="secondary" id="nav-account" href="#cuenta" role="button" data-route="cuenta"><img class="icon account-nav-icon" src="/assets/icons/settings.svg" alt="">Mi cuenta</a>
+      <span id="session-status" class="badge" aria-live="polite">Sin sesión</span>
+    </nav>
+  </header>
+  <main id="main">
+    <section id="landing" class="landing intro" aria-labelledby="welcome-title">
+      <div class="welcome-copy">
+        <h1 id="welcome-title">Una conversación puede<br>ser el comienzo de todo.</h1>
+        <p class="lead">Un espacio para hablar sin ruido. Crea tu identidad, conecta mediante<br class="desktop-break"> invitaciones y mantén el control de tus conversaciones.</p>
+        <a class="primary welcome-cta" id="create-account" href="#registro" role="button" data-route="registro">Crear cuenta <img class="icon" src="/assets/icons/arrow-right.svg" alt=""></a>
+        <p class="welcome-note">Sin contraseñas tradicionales · Acceso mediante 24 palabras</p>
+      </div>
+      <div class="welcome-preview" aria-label="Una conversación en Nexo">
+        <p class="preview-message">Hola, ¿estás por aquí?</p>
+        <p class="preview-message own">Sí, ¡bienvenido a Nexo! ✦</p>
+        <p class="preview-message">Hablemos en privado.</p>
+      </div>
+      <div class="steps"><p>01 <span>CREA TU IDENTIDAD</span></p><p>02 <span>COMPARTE UNA INVITACIÓN</span></p><p>03 <span>EMPIEZA A HABLAR</span></p></div>
+    </section>
+    <section id="workspace" class="layout" aria-label="Tu espacio en Nexo" hidden>
+      <div id="account-card" class="card">
+        <div id="notice" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div id="screen"></div>
+      </div>
+    </section>
+    <noscript>Activa JavaScript para entrar y conversar en Nexo.</noscript>
+  </main>
+  <dialog id="access-dialog" class="access-dialog" aria-labelledby="access-title">
+    <button id="close-access" class="icon-button dialog-close" type="button" aria-label="Cerrar acceso"><img class="icon" src="/assets/icons/x.svg" alt=""></button>
+    <div id="access-content"></div>
+  </dialog>
+  <dialog id="info-dialog" class="info-dialog" aria-labelledby="info-title">
+    <button id="close-info" class="icon-button dialog-close" type="button" aria-label="Cerrar información"><img class="icon" src="/assets/icons/x.svg" alt=""></button>
+    <h2 id="info-title" tabindex="-1"></h2><div id="info-copy"></div>
+  </dialog>
+</body>
+</html>

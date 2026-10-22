@@ -1,21 +1,62 @@
 # DEC-05: excepción exclusivamente local. Producción siempre usa HTTPS/WSS.
 services:
+  mailpit:
+    # Correo exclusivamente local: no relay, SMTP interno y buzón en loopback.
+    image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=32m,uid=1000,gid=1000,mode=0700
+    environment:
+      MP_DATABASE: /tmp/mailpit.db
+      MP_MAX_MESSAGES: "100"
+      MP_MAX_AGE: 1h
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_SMTP_DISABLE_RDNS: "true"
+      MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
+      MP_ALLOWED_HOSTS: localhost,127.0.0.1,mailpit
+      MP_QUIET: "true"
+    ports:
+      - "127.0.0.1:${CHAT_MAIL_PORT:-18025}:8025"
+    healthcheck:
+      test: [CMD, /mailpit, readyz, --listen, "127.0.0.1:8025"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    # Una red interna por sí sola no proporciona gateway para publicar puertos.
+    # Mantener SMTP en backend y publicar la UI vía la red bridge normal.
+    networks: [backend, egress]
+    logging:
+      driver: local
+      options:
+        max-size: 1m
+        max-file: "2"
   migrate:
     environment:
       APP_ENV: development
       CHAT_LOCAL_HTTP_PORT: "${CHAT_HTTP_PORT:-18080}"
+      CHAT_LOCAL_MAILBOX: "1"
     volumes:
       - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
   python:
     environment:
       APP_ENV: development
       CHAT_LOCAL_HTTP_PORT: "${CHAT_HTTP_PORT:-18080}"
+      CHAT_LOCAL_MAILBOX: "1"
+    depends_on:
+      mailpit:
+        condition: service_healthy
     volumes:
       - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
   worker:
     environment:
       APP_ENV: development
       CHAT_LOCAL_HTTP_PORT: "${CHAT_HTTP_PORT:-18080}"
+      CHAT_LOCAL_MAILBOX: "1"
     volumes:
       - ./python/config/settings.local.toml:/etc/chat/settings.toml:ro
   caddy:

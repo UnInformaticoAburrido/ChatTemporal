@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 class RateRule(BaseModel):
@@ -35,6 +35,7 @@ class RateLimits(BaseModel):
     messages_user: RateRule = RateRule(limit=120, seconds=60, burst=20)
     ws_frames: RateRule = RateRule(limit=600, seconds=60, burst=100)
     replay: RateRule = RateRule(limit=100, seconds=1)
+    replay_session: RateRule = RateRule(limit=200, seconds=1)
 
 
 class Settings(BaseModel):
@@ -50,6 +51,7 @@ class Settings(BaseModel):
     access_token_ttl_seconds: int = Field(default=86400, ge=86400, le=86400)
     refresh_token_ttl_seconds: int = Field(default=2592000, ge=2592000, le=2592000)
     bootstrap_max_ttl_seconds: int = Field(default=300, gt=0, le=300)
+    bootstrap_web_origins: list[str] = Field(default_factory=list, max_length=20)
     ws_ticket_ttl_seconds: int = Field(default=30, ge=30, le=30)
     ephemeral_offer_timeout_seconds: int = Field(default=60, gt=0)
     ephemeral_delivery_timeout_seconds: int = Field(default=60, gt=0)
@@ -86,6 +88,16 @@ class Settings(BaseModel):
                 raise ValueError("Origen inválido")
             if parts.path or parts.query or parts.fragment or parts.username or parts.password:
                 raise ValueError("El origen no admite ruta, credenciales ni query")
+        if len(set(self.bootstrap_web_origins)) != len(self.bootstrap_web_origins):
+            raise ValueError("Orígenes bootstrap duplicados")
+        for origin in self.bootstrap_web_origins:
+            parsed = HttpUrl(origin)
+            if (str(parsed).removesuffix("/") != origin or parsed.path != "/"
+                    or parsed.query is not None or parsed.fragment is not None
+                    or parsed.username is not None or parsed.password is not None):
+                raise ValueError("Bootstrap requiere orígenes canónicos sin ruta ni credenciales")
+            if parsed.scheme != "https" and parsed.host not in {"localhost", "127.0.0.1", "[::1]"}:
+                raise ValueError("Bootstrap requiere HTTPS fuera de loopback")
         return self
 
 
@@ -110,12 +122,21 @@ def read_secret(name: str) -> str:
     return Path(os.environ[name + "_FILE"]).read_text().strip()
 
 
+def use_local_mailbox(smtp_url: str) -> bool:
+    """El buzón de desarrollo sustituye únicamente el marcador local original."""
+    return (os.environ.get("APP_ENV") == "development"
+            and os.environ.get("CHAT_LOCAL_MAILBOX") == "1"
+            and smtp_url == "smtp://pendiente.invalid:587")
+
+
 def validate_secrets(settings: Settings) -> None:
     """Antes de abrir puertos (§27.2); no imprimir excepciones con sus valores."""
     environment = os.environ.get("APP_ENV", "production")
     if environment not in {"production", "staging", "development", "test"}:
         raise ValueError("APP_ENV inválido")
     production = environment == "production"
+    if production and os.environ.get("CHAT_LOCAL_MAILBOX") == "1":
+        raise ValueError("El buzón local no está permitido en producción")
     for name, schemes in (("DATABASE_URL", {"postgresql"}), ("REDIS_URL", {"redis"}),
                           ("SMTP_URL", {"smtp", "smtps"})):
         parsed = urlsplit(read_secret(name))
@@ -168,11 +189,13 @@ def validate_secrets(settings: Settings) -> None:
     if not settings.vapid_subject.startswith(("mailto:", "https://")) or "@" not in settings.email_from:
         raise ValueError("Contacto operativo inválido")
     if production:
-        values = [*settings.allowed_origins, settings.email_from, settings.vapid_subject]
+        values = [*settings.allowed_origins, *settings.bootstrap_web_origins, settings.email_from, settings.vapid_subject]
         if any(".invalid" in value for value in values):
             raise ValueError("Configuración de ejemplo en producción")
         if any(not origin.startswith("https://") for origin in settings.allowed_origins):
             raise ValueError("Producción requiere HTTPS")
+        if any(not origin.startswith("https://") for origin in settings.bootstrap_web_origins):
+            raise ValueError("Bootstrap web requiere HTTPS en producción")
 
 
 def public_config() -> dict[str, Any]:
