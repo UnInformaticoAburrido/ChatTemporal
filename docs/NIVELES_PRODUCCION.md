@@ -15,10 +15,10 @@ La planificación incluye el MVP completo, mientras el código entrega su base.
 |---|---|---|---|---|
 | N0 · Infraestructura | — | Compose, redes, secrets, fuentes montados, healthchecks, cadena de arranque | Arranque en limpio, fallo de dependencia, migración fallida y reinicio sin Compose comprobados en contenedores | Implementado; falta validación real de contenedores |
 | N1 · Persistencia | N0 | Alembic, esquema §§17/24.3/28.2, índices, constraints, repositorios y transacciones | BD desde cero y actualización 0001→0002; unicidad y retención | Repositorios base y transacciones implementados; migraciones, concurrencia y retención probadas con servicios locales reales. Pendiente completar repositorios por flujo y validar versiones Compose |
-| N2 · Identidad y seguridad | N1 | Registro/verificación/recuperación, sesiones, bootstrap, JWT, rate limiting | Claims, expiración, reuse, revocación y aislamiento probados | REST y persistencia implementadas; pruebas de seguridad con BD/Redis reales. Pendientes proveedor SMTP real, cierre de sockets en N5 y versiones Compose |
+| N2 · Identidad y seguridad | N1 | Registro/verificación/recuperación, sesiones, bootstrap, JWT, rate limiting | Claims, expiración, reuse, revocación y aislamiento probados | REST y persistencia implementadas; pruebas de seguridad con BD/Redis reales. Cierre de sockets integrado en N5; pendientes proveedor SMTP real y versiones Compose |
 | N3 · Claves y contratos | N2 | Pública vigente, DTOs estrictos, errores, cursor, autorización, CORS | Protocolos/bytes correctos; fuzzing y accesos horizontales rechazados | Implementado y probado con servicios reales locales; cliente criptográfico de referencia y lecturas paginadas. Pendientes plataforma cliente final y homologación Compose/staging |
-| N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | REST implementado; apertura de voto adelantada de N6. Eventos WS pendientes de N5; homologación Compose/staging pendiente |
-| N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Pendiente |
+| N4 · Invitaciones y conversaciones | N3 | Códigos, host/guest, pending/active/closed, upgrade/leave | HMAC/layout, privacidad pending, transiciones y locks concurrentes | REST implementado; apertura de voto adelantada de N6. Eventos WS integrados en N5; homologación Compose/staging pendiente |
+| N5 · Mensajería y entrega | N4 | WS ticket, heartbeat, stored, ephemeral, idempotencia, Pub/Sub, reconciliación | Handshake/ACK/TTL/cortes/reintentos y carreras sin pérdidas silenciosas | Implementado y probado con sockets y servicios locales reales; pendiente homologación Compose/staging y carga |
 | N6 · Gracia y votaciones | N5 | Gracia ≤5, censo congelado, majority_absolute, cierre a 30 s | Concurrencia, bloqueo de envíos y ausencia de voto=NO | Pendiente |
 | N7 · Recuperación y Push | N5, N6 | Transferencia, QR cliente, replay y Web Push genérico | Blob/TTL/autorización; replay no persistente; Push real | Pendiente |
 | N8 · Operación y seguridad | N0–N7 | Backups/restauración, métricas/alertas completas, logs 14 días, despliegue y rotación | Restauración, fallos, secretos/logs e imagen auditados | Métricas y alertas base; operación completa pendiente |
@@ -192,8 +192,8 @@ compatible con KEY SHARE, y FOR UPDATE en conversations. Regenerar/canjear se
 serializa por usuarios y fila de invitación; canjes mutuos bloquean usuarios por UUID.
 Evidencia y límites en VALIDACION.md; decisiones DEC-53–DEC-59.
 
-El siguiente desarrollo es **N5: WebSocket y entrega**. Los eventos de conversación
-y la cancelación de offers aún no existen; no se afirma un flujo completo de chat.
+El siguiente desarrollo tras N4 era N5; su implementación figura abajo.
+El cliente final y la resolución de votos siguen pendientes.
 
 ## N5 · WebSocket (§§10, 15, 26, 28.2/28.4)
 
@@ -213,6 +213,33 @@ y la cancelación de offers aún no existen; no se afirma un flujo completo de c
   actual de conversación. Resolver estado ready documentado en DUD-06.
 - Tests reales: dos clientes, receptor offline, caída de proceso/Redis, ACK
   repetido, timeout, concurrencia upgrade/close y reinicio sin persistencia Redis.
+
+### Continuación N5 · 2026-09-22
+
+API 0.5.0: `/ws/v1` consume tickets con GETDEL, comprueba Origin y sesión, publica
+session.ready y usa el heartbeat nativo configurado en Uvicorn. Implementa
+message.offer/ready/send/new/ack/delivered/failed y GET de estado de mensaje.
+Stored confirma aceptación mediante la consulta REST normativa (DUD-07), sin
+inventar un evento. Ephemeral exige autorización temporal de ready y vincula la
+entrega a la conexión receptora. Retries compatibles conservan UUID/fingerprint;
+tras fallo definitivo se exige un UUID nuevo.
+
+Redis Pub/Sub conecta instancias, consume revocaciones y publica eventos de
+aceptación, upgrade y cierre. Los sockets revalidan sesión incluso si pierden el
+aviso. Receptor offline recupera stored por REST y ofertas ephemeral aún vigentes
+al conectar. Push sigue en N7. Las transiciones cancelan ofertas no enviadas,
+pero permiten completar el ACK de entregas confirmadas antes de close/upgrade.
+
+0005_delivery_mode guarda modo de envío, deadline y conexión de entrega. La
+reconciliación elimina ciphertext y marca failed/expired tras desconexión, timeout
+u orfandad. Los eventos previos a la migración conservan modo desconocido (NULL);
+no se infiere del modo actual ni de la existencia de ciphertext. La publicación
+no es durable: clientes deben consultar estado/historial tras cortes.
+
+Validación y límites en VALIDACION.md; decisiones DEC-60–DEC-69. Pendientes
+Compose/staging/HTTPS/WSS, cargas y pruebas de fallos de infraestructura completos.
+El siguiente desarrollo funcional es **N6: ballots y resolución de votaciones**;
+N5 respeta el bloqueo de 30 s, pero no resuelve ni elimina gracia rechazada.
 
 ## N6 · Gracia y votación (§8, 28.1)
 

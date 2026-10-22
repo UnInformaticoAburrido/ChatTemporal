@@ -23,7 +23,7 @@ def main() -> None:
         ws_ping_interval=settings.ws_ping_interval_seconds,
         ws_ping_timeout=settings.ws_dead_after_seconds, proxy_headers=False,
     ))
-    # DEC-14: un proceso API inicial; escalar tras implementar pub/sub y pruebas de N5.
+    # Pub/Sub entre instancias probado en N5; dimensionar procesos tras carga N9.
     server.run()
 
 
