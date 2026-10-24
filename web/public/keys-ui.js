@@ -20,7 +20,7 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
     const label = document.createElement('label'); label.htmlFor = 'own-public-key'; label.textContent = 'Tu clave pública';
     const field = document.createElement('textarea'); field.id = 'own-public-key'; field.readOnly = true; field.rows = 2; field.value = value;
     const help = document.createElement('p'); help.className = 'muted';
-    help.textContent = 'Puedes compartir esta clave pública. Para invitar a conversar, usa el botón «Obtener código para invitar» de tu cuenta.';
+    help.textContent = 'Esta cadena es la parte pública de tu identidad de cifrado. La aplicación la utiliza para que otros puedan enviarte mensajes que solo tú puedes abrir. No es una invitación y no se pega en «Nueva conversación». Para conectar con alguien, comparte uno de los códigos de Mi cuenta.';
     const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'secondary'; copy.textContent = 'Copiar mi clave pública';
     copy.onclick = () => {
       if (!alive() || !field.isConnected) return;
@@ -29,7 +29,7 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
       navigator.clipboard.writeText(value).then(() => { if (alive() && field.isConnected) notify('Clave pública copiada.'); }).catch(fallback);
     };
     area.append(label, field, copy, help);
-    container.querySelector('h3').after(area);
+    container.append(area);
   }
   function form(id, action) {
     container.querySelector(id).onsubmit = event => {
@@ -41,8 +41,10 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
   function importMarkup() {
     return `<form id="restore-key"><label for="key-file">Copia cifrada de claves</label>
       <input id="key-file" name="file" type="file" accept=".chatkey,application/json" required>
+      <p class="field-help">Selecciona el archivo .chatkey que descargaste para esta cuenta. No pegues aquí un código de invitación ni tus 24 palabras.</p>
       <label for="key-password">Contraseña de la copia</label>
       <input id="key-password" name="password" type="password" minlength="12" maxlength="256" autocomplete="off" required>
+      <p class="field-help">Es la contraseña que elegiste al crear el archivo. Se usa en tu dispositivo para abrir la copia y no se envía al servidor.</p>
       <button class="primary" type="submit">Abrir copia y comprobar clave</button></form>`;
   }
   function bindImport(expected = null) {
@@ -70,9 +72,9 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
         }
         active?.lock(); candidate?.lock(); candidate = null; active = restored;
         render(`<h3 tabindex="-1">Clave preparada en esta sesión</h3>
-          <p class="muted">La clave de tu copia coincide con la publicada. Conserva el archivo y su contraseña: volverás a necesitarlos al cerrar o recargar.</p>
+          <p class="muted">Tu copia pertenece a esta cuenta y ya está abierta: puedes leer y escribir mensajes. Cambiar de apartado no la bloquea. Si recargas o cierras la página, tendrás que seleccionar de nuevo el archivo .chatkey e introducir su contraseña.</p>
           <section id="chat-panel" aria-label="Chat"></section>
-          <p class="muted">Preparar un traslado borra los mensajes efímeros de esta página. La transferencia incluye las claves; puedes pedir al interlocutor una copia del historial que conserve.</p>
+          <p class="muted">«Enviar claves a otro dispositivo» sirve para preparar el acceso a tus mensajes desde otro equipo. Este recorrido retira el chat actual y sus mensajes efímeros de la página; la transferencia incluye las claves, no el historial de conversaciones. Si necesitas mensajes antiguos, puedes pedir al interlocutor una copia del historial que todavía conserve.</p>
           <button class="secondary" id="send-device-keys" type="button">Enviar claves a otro dispositivo</button>
           <button class="secondary" id="lock-key" type="button">Bloquear clave</button>`);
         showPublicKey(restored.publicKey);
@@ -132,12 +134,17 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
   async function start() {
     const remote = await api.ownKey(user.id); check();
     if (remote) {
-      render(`<h3 tabindex="-1">Abre tu copia de claves</h3><p class="muted">Tu cuenta ya tiene una clave publicada. Abre su copia cifrada para usarla en esta sesión. Las 24 palabras recuperan tu cuenta, pero no descifran esta copia.</p>${importMarkup()}`);
+      render(`<h3 tabindex="-1">Abre tu copia de claves</h3>
+        <p class="muted">Ya has entrado en tu cuenta, pero todavía falta desbloquear los mensajes. Tu navegador necesita la clave privada que guardaste en un archivo .chatkey. Ese archivo está protegido con la contraseña que elegiste al crearlo; las 24 palabras recuperan la cuenta, pero no abren esta copia.</p>
+        <ol class="key-instructions"><li>Busca el archivo <strong>chat-claves.chatkey</strong> que descargaste. Puede estar en Descargas o en la carpeta donde lo guardaste.</li><li>Selecciónalo abajo e introduce la contraseña que elegiste para esa copia.</li><li>Pulsa «Abrir copia y comprobar clave». Si pertenece a esta cuenta y la contraseña es correcta, se abrirán tus conversaciones.</li></ol>
+        <a class="help-link" href="#preguntas/claves">No sé qué archivo necesito o cómo abrirlo</a>${importMarkup()}`);
       showPublicKey(remote.public_key);
       bindImport(); bindReceive(); return;
     }
     render(`<h3 tabindex="-1">Prepara tus claves de conversación</h3>
-      <p class="muted">Protege tu clave con una contraseña distinta de las 24 palabras. Descarga la copia y vuelve a abrirla antes de publicar tu clave pública.</p>
+      <p class="muted">Este es el primer paso para poder leer y enviar mensajes cifrados. La aplicación creará una clave privada en este dispositivo y la guardará en un archivo protegido con la contraseña que elijas. La parte pública se compartirá con la aplicación para que otras personas puedan escribirte.</p>
+      <ol class="key-instructions"><li>Elige una contraseña de al menos 12 caracteres, distinta de tus 24 palabras de recuperación.</li><li>Pulsa «Crear y descargar copia cifrada» y guarda el archivo .chatkey en un lugar que puedas encontrar después.</li><li>En el siguiente paso, vuelve a abrir ese archivo con la misma contraseña. Así comprobamos que la copia que conservarás funciona antes de activar las claves.</li></ol>
+      <a class="help-link" href="#preguntas/primera-vez">Ver los pasos completos para empezar a conversar</a>
       <form id="create-key"><label for="new-key-password">Contraseña para la copia</label>
       <input id="new-key-password" name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required aria-describedby="key-help">
       <small id="key-help">Al menos 12 caracteres. Guarda el archivo y la contraseña por separado; no podemos recuperar esta contraseña.</small>
@@ -158,7 +165,7 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
         document.body.append(link); link.click(); link.remove();
         setTimeout(() => { URL.revokeObjectURL(url); urls.delete(url); }, 1000);
         render(`<h3 tabindex="-1">Comprueba la copia que has guardado</h3>
-          <p class="muted">Selecciona el archivo descargado e introduce su contraseña. Solo después se publicará la clave pública. La copia y la contraseña se procesan aquí y no se envían al servidor.</p>${importMarkup()}`);
+          <p class="muted">La descarga ya está preparada. Ahora selecciona el archivo .chatkey que acabas de guardar y escribe la misma contraseña que elegiste en el paso anterior. Esto comprueba que podrás volver a abrirlo en futuras sesiones. Solo después se publicará tu clave pública y se activará el chat. El archivo y su contraseña no se envían al servidor.</p><a class="help-link" href="#preguntas/claves">Cómo seleccionar y abrir el archivo de claves</a>${importMarkup()}`);
         showPublicKey(publicKey);
         bindImport(publicKey);
       } catch (error) { current.lock(); if (candidate === current) candidate = null; throw error; }

@@ -157,3 +157,59 @@ test('seleccionar otra conversación muestra únicamente los mensajes correspond
   await expect(page.getByLabel('Mensajes', { exact: true })).toContainText('Mensaje de Luis');
   expect(errors).toEqual([]); keys.forEach(key => key.lock());
 });
+
+test('la barra superior se mantiene entre cuenta, chat y ayuda sin perder claves ni mensajes', async ({ page }, testInfo) => {
+  const { errors, unlock, keys, sockets, requests } = await fixture([page], { existing: true });
+  await page.evaluate(() => { window.originalHeader = document.querySelector('.topbar'); });
+  const header = page.locator('.topbar');
+  const original = await header.boundingBox();
+  await unlock(0);
+  await page.getByRole('navigation', { name: 'Conversaciones', exact: true }).getByRole('button').click();
+  sockets[0].send(JSON.stringify(frame('message.new', { message_id: crypto.randomUUID(), sender_role: 'guest',
+    sent_at: new Date().toISOString(), ...keys[1].encrypt('Mensaje que conservamos al consultar ayuda', keys[0].publicKey) })));
+  await expect(page.getByLabel('Mensajes', { exact: true })).toContainText('Mensaje que conservamos');
+  await page.getByLabel('Mensaje', { exact: true }).click();
+  await page.getByLabel('Mensaje', { exact: true }).fill('Borrador pendiente');
+  await expect(page.getByLabel('Mensaje', { exact: true })).toHaveValue('Borrador pendiente');
+  for (const id of ['nav-chat', 'nav-account', 'nav-faq']) await expect(page.locator('#' + id)).toBeVisible();
+  await capture(page, testInfo.project.name, 'persistent-header');
+  await page.getByRole('link', { name: 'Preguntas frecuentes', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Preguntas frecuentes', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Abrir mis claves', exact: true }).click();
+  await expect(page.locator('#faq-claves')).toHaveAttribute('open', '');
+  await capture(page, testInfo.project.name, 'faq-keys');
+  await page.getByRole('button', { name: 'Mi cuenta', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
+  await page.getByRole('button', { name: 'Conversaciones', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Luis', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Mensajes', { exact: true })).toContainText('Mensaje que conservamos');
+  await expect(page.getByLabel('Mensaje', { exact: true })).toHaveValue('Borrador pendiente');
+  expect(await page.evaluate(() => window.originalHeader === document.querySelector('.topbar'))).toBe(true);
+  const current = await header.boundingBox();
+  expect(current.height).toBe(original.height); expect(current.width).toBe(original.width);
+  if (testInfo.project.name === 'mobile') {
+    await page.setViewportSize({ width: 320, height: 740 });
+    const narrowHeader = await header.boundingBox();
+    for (const id of ['nav-chat', 'nav-account', 'nav-faq']) {
+      const bounds = await page.locator('#' + id).boundingBox();
+      expect(bounds.y).toBeGreaterThanOrEqual(narrowHeader.y);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(narrowHeader.y + narrowHeader.height);
+    }
+  }
+
+  expect(requests.filter(request => request.path.endsWith('/recover'))).toHaveLength(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]); keys.forEach(key => key.lock());
+});
+
+test('la ayuda contextual permite volver al archivo y contraseña que se estaban abriendo', async ({ page }) => {
+  const { errors, keys } = await fixture([page], { existing: true });
+  await page.getByRole('button', { name: 'Abrir mis mensajes', exact: true }).click();
+  await page.getByLabel('Contraseña de la copia', { exact: true }).fill('synthetic in-progress password');
+  await page.getByRole('link', { name: 'No sé qué archivo necesito o cómo abrirlo', exact: true }).click();
+  await expect(page.locator('#faq-claves')).toHaveAttribute('open', '');
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Abre tu copia de claves', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Contraseña de la copia', { exact: true })).toHaveValue('synthetic in-progress password');
+  expect(errors).toEqual([]); keys.forEach(key => key.lock());
+});

@@ -172,4 +172,44 @@ No quedan P0/P1/P2 de interfaz dentro de este alcance. La actualización al Dock
 del usuario sigue pendiente: reiniciar `python worker` y recargar Caddy según
 `docs/CLIENTE_WEB.md`. No se han reiniciado ni borrado sus bases de datos.
 
+## Barra persistente y preguntas frecuentes (2026-10-22)
+
+Alcance adicional solicitado: mantener la misma barra superior entre apartados,
+crear ayuda pública y contextual y ampliar las explicaciones de las acciones.
+La cabecera del chat deja de sustituir la navegación global; es una diferencia
+intencional respecto al PDF original, pedida por el usuario en esta iteración.
+
+Evidencia actual: `artifacts/conversations/desktop-persistent-header.png` y
+`mobile-persistent-header.png` muestran el chat con toda la navegación;
+`desktop-faq-keys.png` y `mobile-faq-keys.png` muestran la respuesta sobre claves.
+Los tamaños/densidades de estos recorridos siguen siendo 1280 × 720/densidad 1
+y 412 × 839/densidad 2,625. `desktop-faq-overview.png` y
+`mobile-faq-overview.png` proceden de la instancia real en 18080, sin sesión,
+a 1440 × 900 y 320 × 740 CSS/píxeles, densidad 1. Las comparaciones anteriores
+con los PDF documentan el aspecto previo a esta ampliación.
+
+Revisión: la fuente, la paleta y los recursos originales se mantienen. Las
+respuestas usan párrafos legibles, listas de pasos y definiciones de los cuatro
+conceptos que se confundían. Las preguntas se abren por tema o desde enlaces
+contextuales. La información técnica de la clave pública queda después de las
+instrucciones y el formulario. El chat descuenta la altura de la cabecera para
+mantener visible el compositor. No hay desbordamiento horizontal ni controles
+de navegación fuera de la cabecera en las comprobaciones de 320 px.
+
+La ayuda se muestra sin desmontar la pantalla de sesión: se comprueban el mismo
+nodo de cabecera, las mismas dimensiones y la conservación de claves, mensajes,
+conversación seleccionada, borrador y formulario de apertura de copia. El regreso
+al chat sin correo verificado muestra la cuenta y sus instrucciones. Se conserva
+la navegación de entrada desde la aplicación principal incluso cuando se abre
+su marcador dentro de una página ya cargada.
+
+Verificación: se ejecutan los 82 recorridos de la suite de navegador. Las cuatro
+comprobaciones de entrada desde la aplicación principal que detectó la suite
+se corrigen y pasan en la repetición dirigida de 24 recorridos; también se repite
+la prueba de registro/verificación tras ampliar sus instrucciones. Las pruebas
+siguen comprobando que no se exponen tokens en URL, storage ni DOM. La inspección
+de la FAQ servida en 18080 registra cero errores de consola y de página. No se
+ha cambiado el API ni la base de datos. Los assets están montados y ya se sirven;
+las pestañas abiertas necesitan recargar para ejecutar la nueva versión.
+
 final result: passed

@@ -195,3 +195,23 @@ páginas y aislamiento al cambiar de conversación, tanto en escritorio como en
 móvil. El relevo de ese ensayo es sintético. Las pruebas de integración existentes
 con PostgreSQL/Redis verifican por separado la ausencia de ciphertext durable
 efímero; requieren acceso a Docker y no se sustituyen por el ensayo sintético.
+
+
+## Preguntas frecuentes y navegación persistente
+
+La barra superior mantiene las mismas entradas entre cuenta, chat y ayuda. La
+ayuda está en `/#preguntas`, también sin sesión; `/#preguntas/claves` explica qué
+es la copia .chatkey, para qué sirve y cómo abrirla paso a paso. Hay enlaces
+contextuales en la creación y apertura de claves y en conversaciones.
+
+La ayuda es una sección estática separada de la pantalla de sesión: ocultar el
+chat para leerla no dispone sus claves, sus sockets ni sus mensajes. Volver al
+chat conserva la conversación y el borrador que se estaba escribiendo. Volver
+al formulario de claves conserva los campos, sin guardarlos en almacenamiento
+persistente. La FAQ describe expresamente qué hace cada secreto y cada código,
+los límites del modo efímero, la votación y qué ocurre al recargar.
+
+Las pruebas nuevas comprueban acceso público, enlaces a respuestas, retorno al
+inicio, conservación del mismo encabezado/clave/chat/borrador y retorno desde una
+explicación al formulario de copia. También comprueban navegación sin verificar
+el correo y disposición de la cabecera a 320 px de ancho.

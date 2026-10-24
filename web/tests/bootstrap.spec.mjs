@@ -39,7 +39,7 @@ test('acceso automático entre orígenes, sin tokens en URL/storage/DOM; consumo
   await expect(page.getByRole('status')).toHaveText('Acceso confirmado');
   expect(await page.evaluate(() => window.__issues)).toBe(1);
   expect(await chat.evaluate(() => window.opener === null)).toBe(true);
-  expect(chat.url()).toBe('http://127.0.0.1:4173/');
+  expect(chat.url()).toBe('http://127.0.0.1:4173/#cuenta');
   expect(await chat.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await expect(chat.locator('body')).not.toContainText('synthetic-');
   await page.evaluate(() => window.__launch.popup.postMessage({ type: 'chat.bootstrap.token', protocol_version: 1,

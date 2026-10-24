@@ -159,7 +159,7 @@ test('ephemeral negocia ready y elimina gracia al resolver la votación, incluso
   await expect(page.getByLabel('Mensajes', { exact: true })).not.toContainText('Gracia efímera');
   await expect(page.getByLabel('Mensaje', { exact: true })).toBeEnabled();
   sendEvent(sockets, 'vote.opened', { ...data.vote, status: 'open' });
-  await expect(page.getByText('Votación: mensajes anteriores eliminados.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Votación terminada: se han eliminado los mensajes anteriores a la aceptación.', { exact: true })).toBeVisible();
   page.on('dialog', dialog => dialog.accept());
   await page.getByLabel('Opciones de conversación', { exact: true }).click();
   await page.getByRole('button', { name: 'Guardar mensajes futuros', exact: true }).click();

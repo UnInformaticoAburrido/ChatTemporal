@@ -16,11 +16,13 @@
     <nav class="guest-nav" aria-label="Navegación principal">
       <button class="nav-link" id="privacy-link" type="button">Privacidad</button>
       <button class="nav-link" id="how-link" type="button">Cómo funciona</button>
+      <a class="nav-link faq-nav" id="guest-faq" href="#preguntas" data-route="preguntas">Preguntas frecuentes</a>
       <details class="guest-more" id="guest-more"><summary aria-label="Más información"><img class="icon" src="/assets/icons/more-horizontal.svg" alt=""></summary><div><button id="mobile-privacy" class="nav-link" type="button">Privacidad</button><button id="mobile-how" class="nav-link" type="button">Cómo funciona</button></div></details>
       <a class="secondary" id="sign-in" href="#acceso" role="button" data-route="acceso">Iniciar sesión</a>
     </nav>
     <nav class="member-nav" aria-label="Navegación de la cuenta" hidden>
       <a class="nav-link" id="nav-chat" href="#chat" role="button" data-route="chat">Conversaciones</a>
+      <a class="nav-link faq-nav" id="nav-faq" href="#preguntas" data-route="preguntas">Preguntas frecuentes</a>
       <a class="secondary" id="nav-account" href="#cuenta" role="button" data-route="cuenta"><img class="icon account-nav-icon" src="/assets/icons/settings.svg" alt="">Mi cuenta</a>
       <span id="session-status" class="badge" aria-live="polite">Sin sesión</span>
     </nav>
@@ -45,6 +47,66 @@
         <div id="notice" role="status" aria-live="polite" aria-atomic="true"></div>
         <div id="screen"></div>
       </div>
+    </section>
+    <section id="faq" class="layout faq-page" aria-labelledby="faq-title" hidden>
+      <h1 id="faq-title" tabindex="-1">Preguntas frecuentes</h1>
+      <p class="lead">Qué necesitas para entrar, cómo se protegen tus mensajes y qué hace cada opción. Si es tu primera vez, empieza por las diferencias entre recuperar tu cuenta y abrir tus mensajes.</p>
+      <nav class="faq-topics" aria-label="Temas de ayuda">
+        <a href="#preguntas/claves">Abrir mis claves</a><a href="#preguntas/primera-vez">Primeros pasos</a><a href="#preguntas/invitaciones">Invitar a alguien</a><a href="#preguntas/privacidad">Dónde quedan los mensajes</a>
+      </nav>
+      <details id="faq-claves" class="faq-answer">
+        <summary>¿Qué es «Abre tu copia de claves» y para qué sirve?</summary>
+        <p>Este apartado permite leer y escribir mensajes cifrados. Los mensajes se transforman en datos que solo pueden abrir los participantes. Tu navegador necesita una clave privada para realizar esa operación; iniciar sesión en tu cuenta no la desbloquea automáticamente.</p>
+        <p>La copia de claves es el archivo <strong>chat-claves.chatkey</strong> que descargaste al preparar tus conversaciones por primera vez. El archivo contiene tu clave privada protegida con la contraseña que elegiste para esa copia. No es un código que tengas que pedir a otra persona.</p>
+        <ol><li>Busca el archivo <strong>.chatkey</strong> que guardaste; puede estar en Descargas o en la carpeta que elegiste.</li><li>En «Copia cifrada de claves», pulsa el selector de archivo y elige esa copia.</li><li>Escribe en «Contraseña de la copia» la contraseña que elegiste al crearla. No introduzcas aquí tus 24 palabras.</li><li>Pulsa «Abrir copia y comprobar clave». El navegador abre el archivo y comprueba que pertenece a tu cuenta. Si todo coincide, podrás acceder al chat.</li></ol>
+        <p>El archivo y su contraseña se procesan en tu dispositivo, sin enviarlos al servidor. La clave abierta solo permanece en la memoria de esta página. Al recargar, cerrar la página o bloquear la clave, tendrás que abrir la copia de nuevo. No necesitas hacerlo otra vez por cambiar entre Conversaciones, Mi cuenta y estas preguntas.</p>
+        <p>Si el archivo pertenece a otra cuenta o la contraseña no es correcta, no se sustituye tu clave: verás un error y podrás volver a intentarlo con la copia correcta.</p>
+      </details>
+      <details id="faq-diferencias" class="faq-answer">
+        <summary>¿En qué se diferencian las 24 palabras, la copia, la clave pública y la invitación?</summary>
+        <dl><dt>Correo y 24 palabras de recuperación</dt><dd>Te permiten volver a entrar en tu cuenta. Trátalos como una contraseña: quien tenga ambos puede recuperar tu acceso. Las palabras no abren tu copia de claves ni recuperan por sí solas los mensajes cifrados.</dd><dt>Archivo .chatkey y contraseña de la copia</dt><dd>Permiten desbloquear tu clave privada para leer y escribir mensajes. Necesitas ambos. La contraseña la eliges tú al crear el archivo y es distinta de las 24 palabras.</dd><dt>Clave pública</dt><dd>Es la parte de tu identidad de cifrado que la aplicación puede compartir para que otros te envíen mensajes. No es secreta, pero pegarla en «Nueva conversación» no sirve para invitar: ese formulario espera un código de invitación.</dd><dt>Código de invitación</dt><dd>Es el texto que compartes para crear una conversación contigo. Está en Mi cuenta y puede ser efímero o con historial. No da acceso a tu cuenta ni contiene tu clave privada.</dd></dl>
+      </details>
+      <details id="faq-primera-vez" class="faq-answer">
+        <summary>Es mi primera vez. ¿Qué tengo que hacer para empezar a hablar?</summary>
+        <ol><li>Crea tu cuenta con un apodo y un correo. Guarda las 24 palabras en su orden y confirma que las has guardado: sirven para volver a entrar.</li><li>Verifica el correo con el código recibido. <span id="faq-local-mail" hidden>En esta instalación local, abre el <a href="http://localhost:18025/" target="_blank" rel="noopener noreferrer">buzón de pruebas</a>; el correo de verificación queda allí.</span></li><li>En Mi cuenta, entra en «Gestionar claves de conversación», o ve a Conversaciones y pulsa «Abrir mis mensajes».</li><li>Si aún no tienes claves, elige una contraseña de al menos 12 caracteres y pulsa «Crear y descargar copia cifrada». Guarda el archivo .chatkey y conserva su contraseña por separado.</li><li>Abre ese mismo archivo en el paso de comprobación e introduce su contraseña. Solo después se publica la clave pública que permite a otras personas enviarte mensajes.</li><li>Comparte tu invitación efímera desde Mi cuenta, o pulsa «Nueva conversación» y pega la invitación efímera de otra persona. Ambos necesitáis tener el chat conectado y las claves abiertas.</li></ol>
+      </details>
+      <details id="faq-perdida" class="faq-answer">
+        <summary>¿Qué ocurre si pierdo el archivo de claves o su contraseña?</summary>
+        <p>Primero comprueba si tienes una copia del archivo .chatkey en otro dispositivo o una copia de seguridad. Si conservas el archivo, necesitas también la contraseña con la que lo creaste. No existe un botón para recuperar esa contraseña.</p>
+        <p>Si todavía tienes la clave abierta en otro dispositivo, puedes usar la función de transferencia de claves desde allí. Sigue las instrucciones de ese recorrido antes de cerrar la sesión o recargar el dispositivo que conserva la clave.</p>
+        <p>Si ya no tienes ninguna copia utilizable ni un dispositivo con la clave abierta, las 24 palabras te permiten recuperar la cuenta, pero no reconstruir esa clave privada. El servidor no puede descifrar por ti el historial guardado. No borres la única copia que conservas ni crees claves de otra cuenta esperando que abran esos mensajes.</p>
+      </details>
+      <details id="faq-invitaciones" class="faq-answer">
+        <summary>¿Cómo invito a alguien y qué código debo compartir?</summary>
+        <p>En Mi cuenta, pulsa «Obtener código para invitar». Antes debes verificar tu correo y preparar las claves de conversación. Verás dos códigos: uno para conversaciones con historial y otro para conversaciones efímeras.</p>
+        <p>Para hablar sin guardar historial remoto, copia <strong>la invitación efímera</strong> y compártela con la otra persona por el medio que elijas. Esa persona debe entrar en Conversaciones, pulsar «Nueva conversación», pegar el código completo y confirmar. El formulario actual solo admite invitaciones efímeras; si pegas la de historial, te pedirá la otra.</p>
+        <p>Cuando alguien utiliza tu código, aparecerá una conversación pendiente. Si no la ves, pulsa «Actualizar conversaciones». El anfitrión, que es quien compartió su código, puede aceptarla desde las opciones de esa conversación.</p>
+        <p>«Regenerar» cambia <strong>las dos invitaciones</strong>. Los códigos antiguos dejan de servir para nuevas conversaciones, aunque las conversaciones ya creadas continúan existiendo. Comparte de nuevo el código si la otra persona todavía no lo había utilizado.</p>
+      </details>
+      <details id="faq-privacidad" class="faq-answer">
+        <summary>¿Dónde quedan los mensajes? ¿Qué significa «efímera» o «con historial»?</summary>
+        <p><strong>Conversación efímera:</strong> el servidor transmite el mensaje cifrado de forma temporal, pero no lo guarda como historial. Ambos usuarios deben estar conectados. Los mensajes que ves permanecen en la memoria de esta página; se pierden al recargar, cerrar la página o cerrar la sesión. Una copia de claves permite descifrar mensajes, pero no contiene una copia de las conversaciones.</p>
+        <p><strong>Conversación con historial:</strong> el servidor conserva el contenido cifrado según los plazos de retención de la aplicación. Si vuelves a entrar y abres la misma clave privada, podrás consultar los mensajes que todavía estén disponibles. El servidor no recibe el texto descifrado, aunque sí gestiona datos necesarios para entregar los mensajes, como la conversación, la hora y el estado de entrega.</p>
+        <p>Las conversaciones nuevas del formulario «Nueva conversación» usan el modo efímero. Las conversaciones anteriores con historial conservan ese modo. Si el anfitrión elige «Guardar mensajes futuros» y confirma, los mensajes posteriores pasarán a guardarse cifrados; los mensajes efímeros anteriores no se suben automáticamente.</p>
+      </details>
+      <details id="faq-aceptacion" class="faq-answer">
+        <summary>¿Por qué pone «Pendiente de aceptación» o aparece una votación?</summary>
+        <p>Usar una invitación crea primero una conversación pendiente. El anfitrión debe abrir las opciones del chat y elegir «Aceptar conversación». Antes de aceptarla solo se permite un número limitado de mensajes de presentación; el chat muestra cuántos se han utilizado.</p>
+        <p>Al aceptar puede abrirse una votación sobre los mensajes enviados antes de la aceptación. Mientras esté abierta, el envío se pausa. «Conservar» solicita mantener esos mensajes y «Eliminar» vota por descartarlos. No votar cuenta como «Eliminar», y un voto emitido no se puede cambiar.</p>
+        <p>La votación decide qué hacer con esos mensajes previos; no es el botón para aceptar al contacto ni convierte por sí sola una conversación efímera en una conversación con historial. Cuando la votación termina, se aplica su resultado y el envío vuelve a estar disponible.</p>
+      </details>
+      <details id="faq-entrega" class="faq-answer">
+        <summary>¿Por qué no puedo enviar o por qué un mensaje no aparece como entregado?</summary>
+        <p>Para enviar necesitas la sesión iniciada, la clave abierta, conexión con el chat y una conversación que no esté cerrada. El botón también se desactiva si el texto está vacío, hay una votación abierta o se ha agotado el límite de mensajes de presentación.</p>
+        <p>«Esperando conexión» significa que el sistema todavía espera al destinatario; no confirma que haya recibido el mensaje. «Sin confirmar» significa que falta una confirmación del servidor. «Entregado» indica que el otro dispositivo ha podido descifrarlo y confirmar la recepción, no que la persona lo haya leído.</p>
+        <p>En una conversación efímera, pídele a la otra persona que mantenga su chat conectado y sus claves abiertas. Si el intento falla o caduca, comprueba la conexión antes de volver a enviar. En las conversaciones con historial puede aparecer «Comprobar y reintentar» para consultar el resultado del mismo envío sin crear otro mensaje distinto.</p>
+      </details>
+      <details id="faq-sesion" class="faq-answer">
+        <summary>¿Qué pasa al cambiar de apartado, recargar o cerrar sesión?</summary>
+        <p>Cambiar entre Mi cuenta, Conversaciones y Preguntas frecuentes no cierra tu sesión ni bloquea las claves que ya has abierto. Puedes consultar esta ayuda y volver al mismo chat desde la barra superior.</p>
+        <p>Recargar o cerrar la página elimina los datos que solo estaban en su memoria. Tendrás que iniciar sesión de nuevo con tu correo y tus 24 palabras, y abrir el archivo .chatkey para leer mensajes cifrados. El historial efímero de esa página no se recupera desde el servidor.</p>
+        <p>«Bloquear clave» retira la clave privada de esta página y vacía el chat local, pero no elimina tu cuenta. «Cerrar sesión» termina tu acceso desde la página y retira también las claves abiertas. Conserva antes tus copias de seguridad.</p>
+      </details>
     </section>
     <noscript>Activa JavaScript para entrar y conversar en Nexo.</noscript>
   </main>

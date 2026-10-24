@@ -6,6 +6,8 @@
   font-display: swap;
 }
 :root {
+  --header-height: 108px;
+  --frame-border: 6px;
   --bg:#0b1020;
   --panel:#141d30;
   --input:#1e2b43;
@@ -153,7 +155,12 @@ h3 {
   color: white;
 }
 .topbar {
-  height: 108px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  width: 100%;
+  background: var(--bg);
+  height: var(--header-height);
   max-width: 1440px;
   margin: auto;
   padding: 0 72px;
@@ -737,35 +744,6 @@ input[type=file] {
   max-width: 100%;
   margin-top: 12px;
 }
-body[data-view=chat] .topbar {
-  position: absolute;
-  z-index: 2;
-  top: 6px;
-  left: 0;
-  width: 30%;
-  height: 94px;
-  padding: 0 28px;
-  background: var(--panel);
-  gap: 16px;
-}
-body[data-view=chat] .brand img {
-  content: url(/assets/nexo-chat-logo.png);
-}
-body[data-view=chat] .member-nav {
-  gap: 0;
-}
-body[data-view=chat] #nav-chat,
-body[data-view=chat] .badge {
-  display: none;
-}
-body[data-view=chat] #nav-account {
-  font-size: 0;
-  min-width: 44px;
-  width: 52px;
-  height: 48px;
-  background: #1e2b43 url(/assets/icons/settings.svg) center/18px no-repeat;
-  padding: 0;
-}
 body[data-view=chat] #workspace {
   margin: 0;
   padding: 0;
@@ -789,7 +767,7 @@ body[data-view=chat] #notice:not(:empty) {
   z-index: 8;
   left: calc(30% + 24px);
   right: 24px;
-  top: 106px;
+  top: calc(var(--header-height) + 12px);
   box-shadow: 0 6px 24px #0005;
 }
 body:not([data-view=chat]) #chat-panel {
@@ -798,13 +776,13 @@ body:not([data-view=chat]) #chat-panel {
 #chat-panel {
   display: grid;
   grid-template-columns: minmax(0, 30%) minmax(0, 70%);
-  height: calc(100dvh - 6px);
-  min-height: 520px;
+  height: calc(100dvh - var(--header-height) - var(--frame-border));
+  min-height: 360px;
   overflow: hidden;
 }
 .chat-sidebar {
   background: var(--panel);
-  padding: 108px 16px 18px;
+  padding: 24px 16px 18px;
   min-width: 0;
   overflow-y: auto;
 }
@@ -1159,14 +1137,22 @@ body:not([data-view=chat]) #chat-panel {
   }
 }
 @media (max-width: 760px) {
+  :root { --header-height: 148px; --frame-border: 4px; }
   body {
     border-top-width: 4px;
   }
   .topbar {
-    height: 86px;
-    padding: 0 22px;
-    gap: 10px;
+    height: var(--header-height);
+    padding: 12px 22px;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-content: center;
   }
+  .topbar > nav { flex: 1 1 100%; }
+  .guest-nav > .faq-nav { display: inline-flex; }
+  .member-nav .faq-nav { max-width: 105px; line-height: 1.25; text-align: center; }
+  .member-nav .badge { flex: 1 1 100%; max-width: none; text-align: right; }
+
   .brand img {
     width: 105px;
     height: auto;
@@ -1174,7 +1160,7 @@ body:not([data-view=chat]) #chat-panel {
   .guest-nav {
     gap: 14px;
   }
-  .guest-nav > .nav-link {
+  .guest-nav > .nav-link:not(.faq-nav) {
     display: none;
   }
   .topbar .secondary {
@@ -1353,26 +1339,17 @@ body:not([data-view=chat]) #chat-panel {
     font-size: 13px;
     gap: 8px 18px;
   }
-  body[data-view=chat] .topbar {
-    top: 4px;
-    width: 100%;
-    height: 86px;
-    padding: 0 24px;
-  }
-  body[data-view=chat] .topbar .member-nav {
-    flex-wrap: nowrap;
-  }
   body[data-view=chat] #notice:not(:empty) {
     left: 12px;
     right: 12px;
-    top: 86px;
+    top: calc(var(--header-height) + 8px);
   }
   #chat-panel {
     grid-template-columns: minmax(0, 1fr);
-    height: calc(100dvh - 4px);
+    height: calc(100dvh - var(--header-height) - var(--frame-border));
   }
   .chat-sidebar {
-    padding-top: 100px;
+    padding-top: 24px;
   }
   .chat-empty {
     display: none;
@@ -1387,9 +1364,6 @@ body:not([data-view=chat]) #chat-panel {
     display: flex;
   }
   #chat-panel[data-mobile=list] #conversation {
-    display: none;
-  }
-  body:has(#chat-panel[data-mobile=conversation])[data-view=chat] .topbar {
     display: none;
   }
   #back-to-rooms {
@@ -1448,9 +1422,6 @@ body:not([data-view=chat]) #chat-panel {
     transition: background .15s, border-color .15s;
   }
 }
-.chat-account {
-  display: none;
-}
 .conversation-heading #connection {
   margin: 4px 0 0;
   font-size: 10px;
@@ -1459,9 +1430,6 @@ body:not([data-view=chat]) #chat-panel {
   display: none;
 }
 @media (max-width: 760px) {
-  .chat-account {
-    display: inline-flex;
-  }
 }
 @media (min-width: 1201px) {
   .landing {
@@ -1492,12 +1460,6 @@ body:not([data-view=chat]) #chat-panel {
 }
 .account-nav-icon {
   display: none;
-}
-body[data-view=chat] #nav-account {
-  background-image: none;
-}
-body[data-view=chat] .account-nav-icon {
-  display: inline-block;
 }
 #nick-help {
   position: absolute;
@@ -1597,3 +1559,37 @@ body[data-view=conversations] #screen > :not(#conversation-home):not(#keys-panel
 .invitation-dialog textarea { resize: vertical; }
 .invitation-dialog .primary { width: 100%; margin-top: 20px; }
 .invitation-dialog .notice { margin-top: 12px; }
+
+.faq-page { max-width: 1080px; }
+.faq-page h1 { font-size: clamp(30px, 4vw, 42px); line-height: 1.2; margin-bottom: 16px; }
+#faq-title { outline: none; }
+.faq-page .lead { margin: 0 0 24px; max-width: 780px; font-size: 17px; line-height: 1.65; }
+.faq-topics { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 28px; }
+.faq-page a, .help-link { color: var(--mint); text-underline-offset: 3px; }
+.faq-answer { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; margin: 14px 0; padding: 20px 24px; scroll-margin-top: calc(var(--header-height) + 16px); }
+.faq-answer summary { font-size: 18px; font-weight: 600; }
+.faq-answer[open] summary { margin-bottom: 18px; }
+.faq-answer p, .faq-answer li, .faq-answer dd { color: var(--muted); line-height: 1.75; overflow-wrap: anywhere; }
+.faq-answer p:last-child { margin-bottom: 0; }
+.faq-answer li + li, .key-instructions li + li { margin-top: 12px; }
+.faq-answer strong { color: var(--text); }
+.faq-answer dt { font-weight: 600; margin-top: 20px; }
+.faq-answer dd { margin: 8px 0 0; }
+.key-instructions { color: var(--muted); line-height: 1.7; padding-left: 24px; }
+.help-link { display: inline-block; margin: 4px 0 16px; }
+@media (max-width: 760px) {
+  .faq-answer { padding: 18px; }
+  .faq-answer summary { font-size: 16px; }
+  .faq-page .lead { font-size: 16px; }
+}
+
+.faq-nav { display: inline-flex; min-height: 44px; align-items: center; text-decoration: none; }
+.guest-nav [aria-current="page"] { color: var(--mint); }
+@media (max-width: 760px) {
+  .guest-nav .faq-nav { max-width: 140px; font-size: 12px; line-height: 1.25; }
+}
+@media (max-width: 380px) {
+  .topbar { padding-left: 16px; padding-right: 16px; }
+  .member-nav { gap: 8px; }
+  .member-nav .faq-nav { max-width: 90px; }
+}

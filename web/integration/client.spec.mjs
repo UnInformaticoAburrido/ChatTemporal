@@ -92,7 +92,7 @@ async function keepGrace(host, guest, keep) {
   if (keep) await ballot(guest, 'Conservar');
   // Esperar el plazo normativo permite comprobar la resolución y las cuotas reales.
   for (const page of [host, guest]) {
-    await expect(page.locator('#vote')).toContainText(keep ? 'mensajes anteriores conservados' : 'mensajes anteriores eliminados', { timeout: 35000 });
+    await expect(page.locator('#vote')).toContainText(keep ? 'se han conservado los mensajes anteriores a la aceptación' : 'se han eliminado los mensajes anteriores a la aceptación', { timeout: 35000 });
     await expect(page.getByLabel('Mensaje', { exact: true })).toBeEnabled();
   }
 }

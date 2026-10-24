@@ -7,6 +7,8 @@ const notice = document.querySelector('#notice');
 const card = document.querySelector('#account-card');
 const workspace = document.querySelector('#workspace');
 const accessDialog = document.querySelector('#access-dialog');
+const faq = document.querySelector('#faq');
+document.querySelector('#faq-local-mail').hidden = !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
 let user = null;
 let busy = false;
 let disposeKeys = null;
@@ -19,9 +21,9 @@ let openConversations = null;
 function routeTo(route, push = false) {
   const hash = `#${route}`;
   if (location.hash !== hash) history[push ? 'pushState' : 'replaceState'](null, '', hash);
-  for (const [id, target] of [['nav-account', 'cuenta'], ['nav-chat', 'chat']]) {
+  for (const [id, target] of [['nav-account', 'cuenta'], ['nav-chat', 'chat'], ['nav-faq', 'preguntas'], ['guest-faq', 'preguntas']]) {
     const link = document.getElementById(id);
-    if (route === target) link.setAttribute('aria-current', 'page');
+    if (route.split('/')[0] === target) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
 }
@@ -33,6 +35,14 @@ function navigate(route) {
 function renderRoute() {
   if (busy) { routeTo(api.signedIn ? 'cuenta' : 'inicio'); return; }
   const route = location.hash.slice(1);
+  if (route === 'main-app') {
+    // También funciona si el marcador se abre dentro de una página ya cargada.
+    history.replaceState(null, '', location.pathname + location.search);
+    if (api.signedIn) { setView('account'); routeTo('cuenta'); }
+    else showAutomaticBootstrap();
+    return;
+  }
+  if (route.split('/')[0] === 'preguntas') { showFAQ(route.split('/')[1]); return; }
   if (!api.signedIn) {
     if (route === 'registro') showAccess('register');
     else if (['acceso', 'cuenta', 'chat'].includes(route)) showAccess('recover');
@@ -42,7 +52,23 @@ function renderRoute() {
   if (route === 'chat') {
     document.querySelector('#nav-chat').click();
   } else {
-    document.body.dataset.view = 'account'; routeTo('cuenta');
+    setView('account'); routeTo('cuenta');
+  }
+}
+function setView(view) {
+  document.body.dataset.view = view;
+  syncSession();
+}
+function showFAQ(topic) {
+  accessDialog.close();
+  routeTo(topic ? `preguntas/${topic}` : 'preguntas');
+  setView('faq');
+  const answer = topic ? document.getElementById(`faq-${topic}`) : null;
+  if (answer && faq.contains(answer)) {
+    answer.open = true; answer.querySelector('summary').focus();
+    answer.scrollIntoView({ block: 'start' });
+  } else {
+    document.querySelector('#faq-title').focus(); window.scrollTo(0, 0);
   }
 }
 window.addEventListener('hashchange', () => {
@@ -54,7 +80,10 @@ function syncSession() {
   document.body.dataset.session = api.signedIn ? 'active' : 'inactive';
   document.querySelector('.guest-nav').hidden = api.signedIn;
   document.querySelector('.member-nav').hidden = !api.signedIn;
-  document.querySelector('#landing').hidden = api.signedIn;
+  const helping = document.body.dataset.view === 'faq';
+  document.querySelector('#landing').hidden = api.signedIn || helping;
+  faq.hidden = !helping;
+  workspace.hidden = !api.signedIn || helping;
   document.querySelector('#session-status').textContent = api.signedIn
     ? (user ? `Sesión iniciada · ${user.nick}` : 'Sesión iniciada') : 'Sin sesión';
 }
@@ -72,12 +101,12 @@ function show(markup) {
   screen.innerHTML = markup; // Solo plantillas constantes; datos de usuario siempre vía textContent.
   if (api.signedIn) {
     accessDialog.close(); workspace.append(card); workspace.hidden = false;
-    document.body.dataset.view = 'account';
+    setView('account');
   } else {
     workspace.hidden = true;
     document.querySelector('#access-content').append(card);
     if (!accessDialog.open) accessDialog.showModal();
-    document.body.dataset.view = 'access';
+    setView('access');
   }
   syncSession();
   const heading = screen.querySelector('h2');
@@ -113,7 +142,7 @@ function showAccess(mode = 'register') {
   routeTo(recovering ? 'acceso' : 'registro');
   show(`
     <h2 tabindex="-1">${recovering ? 'Bienvenido de nuevo' : 'Crear tu cuenta'}</h2>
-    <p class="muted">${recovering ? 'Introduce el correo y tus 24 palabras de recuperación en el orden correcto.' : 'Solo necesitamos dos datos para empezar.'}</p>
+    <p class="muted">${recovering ? 'Introduce el correo con el que te registraste y las 24 palabras que guardaste al crear tu cuenta. Escríbelas en el mismo orden; no son la contraseña del archivo de claves.' : 'Elige un apodo y escribe tu correo. Después te mostraremos las 24 palabras para recuperar tu cuenta y te enviaremos un código para verificar el correo.'}</p>
     <form id="access-form">
       ${!recovering ? '<label for="nick">NickName</label><input id="nick" name="nick" aria-label="Nombre de usuario" placeholder="Tu apodo" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]{3,32}" aria-describedby="nick-help"><small id="nick-help">De 3 a 32 letras, números o guiones bajos.</small>' : ''}
       <label for="email">Email</label><input id="email" name="email" aria-label="Correo electrónico" type="email" placeholder="nombre@correo.com" autocomplete="email" maxlength="254" required>
@@ -241,15 +270,15 @@ function showAccount() {
       <form id="profile-form"><label for="profile-nick">Nombre de usuario</label><input id="profile-nick" name="nick" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]{3,32}" autocomplete="username">
       <label for="profile-email">Correo electrónico</label><input id="profile-email" name="email" type="email" required autocomplete="email">
       <p class="muted">Si cambias el correo, tendrás que verificar la nueva dirección.</p><button class="primary" type="submit">Guardar cambios</button></form></section>
-    ${!user.email_verified ? `<p class="muted">Hemos enviado un código a tu correo. Pégalo aquí para verificar tu cuenta.</p>
+    ${!user.email_verified ? `<p class="muted">Hemos enviado un código de verificación al correo de tu cuenta. Copia ese código y pégalo aquí para confirmar que la dirección te pertenece. No es una invitación ni una de tus 24 palabras. Si no llega, revisa el buzón de pruebas en una instalación local o solicita otro código.</p>
       <form id="verify-form"><label for="code">Código de verificación</label><input id="code" name="code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="128" required>
       <button class="primary" type="submit">Verificar correo</button></form>
       <button class="secondary" id="resend" type="button">Enviar otro código</button>` :
       `<section id="invitations-panel" aria-label="Invitar a conversar">
-        <div class="section-heading"><div><h3>Códigos de invitación</h3><p class="muted">Comparte uno de estos códigos con alguien para conectar.</p></div>
+        <div class="section-heading"><div><h3>Códigos de invitación</h3><p class="muted">Copia la invitación efímera y compártela con la persona con la que quieras hablar. Esa persona debe pegarla en «Conversaciones → Nueva conversación». El código con historial corresponde al modo que guarda mensajes cifrados en el servidor.</p></div>
         <button class="secondary" id="invitation-codes" type="button">Obtener código para invitar</button></div>
         <div id="codes"></div></section>
-        <section class="settings-section keys-intro"><h3>Claves de conversación</h3><p class="muted">Crea tus claves o abre su copia para escribir y leer mensajes.</p><button class="secondary" id="open-keys" type="button">Gestionar claves de conversación</button></section><section id="conversation-home" aria-label="Tus conversaciones" hidden></section><section id="keys-panel" aria-label="Claves de conversación"></section><section class="settings-section"><button class="secondary" id="open-push" type="button">Gestionar notificaciones</button><section id="push-panel" aria-label="Notificaciones"></section></section>`}
+        <section class="settings-section keys-intro"><h3>Claves de conversación</h3><p class="muted">Iniciar sesión recupera tu identidad, pero para leer y escribir mensajes cifrados necesitas abrir tu archivo .chatkey con su contraseña. Si es tu primera vez, aquí podrás crear y descargar esa copia. <a class="help-link" href="#preguntas/claves">Qué es la copia de claves y cómo se usa</a></p><button class="secondary" id="open-keys" type="button">Gestionar claves de conversación</button></section><section id="conversation-home" aria-label="Tus conversaciones" hidden></section><section id="keys-panel" aria-label="Claves de conversación"></section><section class="settings-section"><button class="secondary" id="open-push" type="button">Gestionar notificaciones</button><section id="push-panel" aria-label="Notificaciones"></section></section>`}
     <button class="text-button" id="logout" type="button">Cerrar sesión</button>`);
   screen.querySelector('#user-name').textContent = user.nick;
   screen.querySelector('#user-email').textContent = user.email;
@@ -333,14 +362,14 @@ function showAccount() {
       disposeKeys?.(); disposeKeys = null;
       const dispose = await mountKeys({ api, user: owner, container, run: perform, notify: message,
         initialConversation: () => pendingConversation,
-        onChatReady: () => { if (api.signedIn && user === owner) { disposeLobby?.(); disposeLobby = null; document.body.dataset.view = 'chat'; routeTo('chat'); } },
+        onChatReady: () => { if (api.signedIn && user === owner) { disposeLobby?.(); disposeLobby = null; setView('chat'); routeTo('chat'); } },
         finishHandoff: () => { api.clear(); user = null; showAccess('recover'); message('Transferencia cerrada en este dispositivo.'); } });
       if (!container.isConnected || user !== owner || !api.signedIn) dispose();
       else disposeKeys = dispose;
     }
     screen.querySelector('#open-keys').onclick = () => perform(openKeys);
     openConversations = async () => {
-      document.body.dataset.view = 'conversations'; routeTo('chat');
+      setView('conversations'); routeTo('chat');
       const home = screen.querySelector('#conversation-home'); home.hidden = false;
       if (!disposeLobby) {
         const { mountConversationLobby } = await import('./chat-ui.js');
@@ -374,7 +403,7 @@ function showWelcome() {
   if (busy || api.signedIn) return;
   routeTo('inicio');
   accessDialog.close(); screen.replaceChildren(); notice.textContent = ''; notice.className = '';
-  workspace.append(card); workspace.hidden = true; document.body.dataset.view = 'welcome'; syncSession();
+  workspace.append(card); workspace.hidden = true; setView('welcome'); syncSession();
 }
 document.querySelectorAll('.guest-nav [data-route], .welcome-copy [data-route]').forEach(link => {
   link.addEventListener('click', event => {
@@ -388,12 +417,14 @@ document.querySelector('.brand').onclick = event => {
   event.preventDefault(); if (busy) return;
   navigate(api.signedIn ? 'cuenta' : 'inicio');
 };
-document.querySelector('#nav-account').onclick = event => { event.preventDefault(); if (!busy && user) { routeTo('cuenta', true); document.body.dataset.view = 'account'; } };
+document.querySelector('#nav-faq').onclick = event => { event.preventDefault(); navigate('preguntas'); };
+document.querySelector('#nav-account').onclick = event => { event.preventDefault(); if (!busy && api.signedIn) { routeTo('cuenta', true); setView('account'); } };
 document.querySelector('#nav-chat').onclick = event => {
   event.preventDefault();
-  if (busy || !user) return;
-  if (!user.email_verified) { routeTo('cuenta'); message('Verifica tu correo antes de abrir tus conversaciones.', true); return; }
-  if (screen.querySelector('#chat-panel')?.children.length) { routeTo('chat', true); document.body.dataset.view = 'chat'; }
+  if (busy || !api.signedIn) return;
+  if (!user) { routeTo('cuenta'); setView('account'); message('Primero pulsa «Consultar mi cuenta» para cargar tu perfil. No necesitas volver a introducir tus palabras.', true); return; }
+  if (!user.email_verified) { routeTo('cuenta'); setView('account'); message('Verifica tu correo antes de abrir tus conversaciones. Introduce en Mi cuenta el código que recibiste en el correo de verificación.', true); return; }
+  if (screen.querySelector('#chat-panel')?.children.length) { routeTo('chat', true); setView('chat'); }
   else perform(openConversations);
 };
 function showInfo(title, paragraphs) {
@@ -408,9 +439,9 @@ document.querySelector('#privacy-link').onclick = () => showInfo('Tu privacidad,
   'Puedes elegir conversaciones efímeras o con historial cifrado. Las notificaciones, si las activas, nunca incluyen el contenido del mensaje.',
 ]);
 document.querySelector('#how-link').onclick = () => showInfo('Cómo funciona Nexo', [
-  '01 · Crea tu identidad. Elige un apodo, verifica tu correo y guarda tus 24 palabras de recuperación.',
-  '02 · Prepara tus claves y comparte una invitación. Guarda la copia cifrada para poder abrir tus conversaciones en otra sesión.',
-  '03 · Empieza a hablar. Usa una invitación, acepta una conversación y elige qué mensajes conservar.',
+  '01 · Crea tu identidad. Elige un apodo y un correo. Guarda las 24 palabras en su orden: las necesitarás junto al correo para volver a entrar. Después copia el código del correo de verificación en Mi cuenta.',
+  '02 · Prepara tus mensajes. Crea el archivo de claves .chatkey, protégelo con una contraseña y comprueba que puedes abrirlo. La copia permite descifrar mensajes; las 24 palabras permiten recuperar la cuenta. Son cosas distintas y necesitas conservar ambas.',
+  '03 · Conecta con otra persona. Comparte la invitación efímera de Mi cuenta o pega la suya en Nueva conversación. El anfitrión acepta la conversación desde sus opciones. En modo efímero ambos necesitáis el chat conectado y las claves abiertas; los mensajes de la página se pierden al cerrarla o recargarla.',
 ]);
 document.querySelector('#close-info').onclick = () => document.querySelector('#info-dialog').close();
 document.querySelector('#mobile-privacy').onclick = document.querySelector('#privacy-link').onclick;
@@ -422,8 +453,4 @@ document.querySelector('#info-dialog').addEventListener('close', () => {
 // Una página recuperada desde la caché de navegación no debe restaurar secretos visibles.
 window.addEventListener('pagehide', () => { disposeLobby?.(); disposeLobby = null; disposeBootstrap?.(); disposeBootstrap = null; disposeKeys?.(); disposeKeys = null; disposePush?.(); disposePush = null; api.clear(); user = null; screen.replaceChildren(); message(''); });
 window.addEventListener('pageshow', event => { if (event.persisted) showWelcome(); });
-if (location.hash === '#main-app') {
-  // Marcador público de intención, sin credenciales; no se conserva en el historial.
-  history.replaceState(null, '', location.pathname + location.search);
-  showAutomaticBootstrap();
-} else renderRoute();
+renderRoute();

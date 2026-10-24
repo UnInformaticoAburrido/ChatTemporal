@@ -71,3 +71,28 @@ en el navegador y no se guardan como historial remoto en ese modo. Ambos usuario
 necesitan estar conectados; el historial local solo dura mientras la página sigue
 abierta. Detalles, límites, pruebas y comandos para aplicar la actualización:
 [CLIENTE_WEB.md](CLIENTE_WEB.md#conversaciones-como-apartado-propio).
+
+
+## Barra común y ayuda (2026-10-22)
+
+La cabecera se conserva al pasar entre Mi cuenta, Conversaciones y Preguntas
+frecuentes, incluso dentro de una conversación en móvil. Se mantiene visible al
+desplazarse por las respuestas. El chat ocupa el espacio restante de la ventana;
+no tapa ni sustituye la navegación principal.
+
+`/#preguntas` abre la ayuda sin exigir una cuenta. Los enlaces como
+`/#preguntas/claves` abren y enfocan directamente una respuesta. Consultar esta
+sección no reconstruye la pantalla de cuenta: conserva la clave abierta, el chat,
+los mensajes de la sesión y los campos que el usuario estaba rellenando.
+
+Las respuestas explican la diferencia entre acceso a cuenta (correo/24 palabras)
+y acceso a mensajes (archivo .chatkey/contraseña), cómo crear y abrir la copia,
+qué ocurre si se pierde, cómo usar las invitaciones, los modos de historial,
+la aceptación y las votaciones, los estados de entrega y el cierre de sesión.
+Los textos de registro, cuenta, claves y conversación enlazan o desarrollan estas
+explicaciones. El enlace al buzón de desarrollo solo se muestra en localhost.
+
+Este cambio solo modifica los assets web: el montaje local ya sirve el contenido
+actualizado y no requiere migraciones ni reiniciar Python. Una pestaña que ya
+estaba abierta debe recargarse para ejecutar la nueva versión; esa recarga sigue
+requiriendo volver a acceder y abrir las claves, y pierde su historial efímero.

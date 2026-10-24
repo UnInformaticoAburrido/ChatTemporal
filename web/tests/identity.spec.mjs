@@ -47,6 +47,10 @@ test('registro, confirmación de frase, verificación y logout', async ({ page }
   await page.getByRole('button', { name: 'Continuar a la verificación' }).click();
   await expect(page.getByRole('listitem')).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('abandon');
+  await page.getByRole('link', { name: 'Preguntas frecuentes', exact: true }).click();
+  await page.getByRole('button', { name: 'Conversaciones', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
+  await expect(page.locator('#notice')).toContainText('Verifica tu correo');
   await page.getByRole('button', { name: 'Enviar otro código' }).click();
   await expect(page.getByRole('status')).toContainText('otro código');
   await page.getByLabel('Código de verificación').fill('synthetic-code');
