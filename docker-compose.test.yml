@@ -1,4 +1,6 @@
 services:
+  help:
+    ports: !override []
   mailpit:
     ports: !override []
   postgresql:

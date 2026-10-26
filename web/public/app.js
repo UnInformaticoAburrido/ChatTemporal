@@ -454,3 +454,49 @@ document.querySelector('#info-dialog').addEventListener('close', () => {
 window.addEventListener('pagehide', () => { disposeLobby?.(); disposeLobby = null; disposeBootstrap?.(); disposeBootstrap = null; disposeKeys?.(); disposeKeys = null; disposePush?.(); disposePush = null; api.clear(); user = null; screen.replaceChildren(); message(''); });
 window.addEventListener('pageshow', event => { if (event.persisted) showWelcome(); });
 renderRoute();
+
+// Ayuda aislada: nunca adjuntar la sesión, el perfil ni conversaciones.
+const helpForm = document.querySelector('#help-form');
+const helpQuestion = document.querySelector('#help-question');
+const helpStatus = document.querySelector('#help-status');
+const helpAnswer = document.querySelector('#help-answer');
+const helpSend = document.querySelector('#help-send');
+let helpRequest = null;
+helpForm.onsubmit = async event => {
+  event.preventDefault();
+  const question = helpQuestion.value.trim();
+  if (!question || helpRequest) return;
+  const controller = new AbortController();
+  helpRequest = controller;
+  const timeout = setTimeout(() => controller.abort(), 100000);
+  helpSend.disabled = true;
+  helpAnswer.textContent = '';
+  helpStatus.textContent = 'El asistente está preparando la respuesta…';
+  try {
+    const response = await fetch('/help-api/question', {
+      method: 'POST', credentials: 'omit', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }), signal: controller.signal,
+    });
+    if (!response.headers.get('content-type')?.includes('application/json')) throw new Error();
+    const result = await response.json();
+    if (helpRequest !== controller) return;
+    if (!response.ok) {
+      helpStatus.textContent = typeof result.error === 'string' ? result.error : 'El asistente no está disponible. Consulta las preguntas frecuentes.';
+      return;
+    }
+    if (typeof result.answer !== 'string' || !result.answer.trim()) throw new Error();
+    helpAnswer.textContent = result.answer;
+    helpStatus.textContent = 'Respuesta del asistente. Comprueba la información en la ayuda.';
+  } catch {
+    if (helpRequest === controller) helpStatus.textContent = 'No se pudo obtener una respuesta. Inténtalo más tarde o consulta las preguntas frecuentes.';
+  } finally {
+    clearTimeout(timeout);
+    if (helpRequest === controller) { helpRequest = null; helpSend.disabled = false; }
+  }
+};
+document.querySelector('#help-clear').onclick = () => {
+  helpRequest?.abort(); helpRequest = null; helpSend.disabled = false;
+  helpQuestion.value = ''; helpAnswer.textContent = ''; helpStatus.textContent = '';
+  helpQuestion.focus();
+};

@@ -1593,3 +1593,6 @@ body[data-view=conversations] #screen > :not(#conversation-home):not(#keys-panel
   .member-nav { gap: 8px; }
   .member-nav .faq-nav { max-width: 90px; }
 }
+
+.help-answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+#help-question { width: 100%; box-sizing: border-box; }

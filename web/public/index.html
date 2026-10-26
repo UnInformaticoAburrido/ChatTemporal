@@ -51,6 +51,18 @@
     <section id="faq" class="layout faq-page" aria-labelledby="faq-title" hidden>
       <h1 id="faq-title" tabindex="-1">Preguntas frecuentes</h1>
       <p class="lead">Encuentra ayuda para entrar, hablar con otra persona y cambiar tus datos. Empieza por «Primeros pasos». Si no encuentras tu caso, describe qué estabas intentando hacer y qué aviso aparece, sin compartir contraseñas ni palabras de acceso.</p>
+      <section class="faq-answer" aria-labelledby="help-assistant-title">
+        <h2 id="help-assistant-title">Preguntar al asistente local</h2>
+        <p>Escribe una duda sobre Nexo. La pregunta se enviará al modelo local conectado por el responsable de esta instalación. Puede equivocarse: comprueba la respuesta en las preguntas frecuentes. No escribas contraseñas, tus 24 palabras ni mensajes privados.</p>
+        <form id="help-form"><label for="help-question">¿Qué necesitas saber?</label>
+          <textarea id="help-question" name="question" maxlength="1000" rows="3" required placeholder="Por ejemplo: ¿qué necesito para empezar a hablar?"></textarea>
+          <button id="help-send" class="primary" type="submit">Preguntar</button>
+          <button id="help-clear" class="secondary" type="button">Borrar consulta</button>
+        </form>
+        <p id="help-status" role="status" aria-live="polite"></p>
+        <p id="help-answer" class="help-answer" aria-live="polite"></p>
+        <p><a href="#preguntas/primera-vez">Consultar primeros pasos</a> · <a href="#preguntas/asistente">Ayuda sobre el asistente</a></p>
+      </section>
       <nav class="faq-topics" aria-label="Temas de ayuda">
         <a href="#preguntas/claves">Abrir mis claves</a><a href="#preguntas/primera-vez">Primeros pasos</a><a href="#preguntas/invitaciones">Invitar a alguien</a><a href="#preguntas/privacidad">Dónde quedan los mensajes</a>
       </nav>
@@ -130,6 +142,11 @@
         <summary>¿Cómo elijo una conversación o dejo de escribir en ella?</summary>
         <p>En Conversaciones, pulsa el nombre de la conversación que quieras abrir. Si faltan conversaciones, pulsa «Actualizar conversaciones». Para escribir necesitas haber abierto tu copia de claves. Escribe el texto y pulsa Enviar; en un teclado, Intro envía y Mayúsculas + Intro añade otra línea.</p>
         <p>«Cerrar conversación», dentro de sus opciones, impide seguir enviando mensajes en ella. No significa cerrar sesión ni garantiza borrar los mensajes ya recibidos por la otra persona. <a href="#preguntas/entrega">Resolver problemas al enviar</a>.</p>
+      </details>
+      <details id="faq-asistente" class="faq-answer">
+        <summary>¿Qué puede responder el asistente? ¿Por qué no está disponible?</summary>
+        <p>Responde dudas sobre las funciones de Nexo a partir de una guía de ayuda. No puede consultar tu cuenta, leer conversaciones ni hacer cambios por ti. Cada pregunta es independiente: incluye lo necesario para entenderla, sin datos privados.</p>
+        <p>Si no está conectado, el responsable de la instalación debe conectar su modelo local. Puedes seguir consultando estas preguntas. Si está ocupado, espera unos momentos. «Borrar consulta» limpia la pregunta y la respuesta de esta página.</p>
       </details>
     </section>
     <noscript>Activa JavaScript para entrar y conversar en Nexo.</noscript>

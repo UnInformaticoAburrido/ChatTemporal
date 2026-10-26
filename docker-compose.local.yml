@@ -64,3 +64,31 @@ services:
     # Caddy sigue escuchando en 8080 dentro del contenedor.
     ports: !override ["127.0.0.1:${CHAT_HTTP_PORT:-18080}:8080"]
     command: [caddy, run, --config, /etc/caddy/Caddyfile.local, --adapter, caddyfile]
+  help:
+    image: chat-python:0.1.0
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    working_dir: /app
+    command: [python, -m, uvicorn, chat.help_assistant:app, --host, 0.0.0.0, --port, "8081", --no-access-log]
+    environment:
+      NEXO_HELP_MODEL: "${NEXO_HELP_MODEL:-}"
+      NEXO_HELP_OLLAMA_URL: "${NEXO_HELP_OLLAMA_URL:-http://host.docker.internal:11434}"
+      NEXO_HELP_CATALOG: /help/GUIA_USUARIO_LLM.md
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./python/chat/help_assistant.py:/app/chat/help_assistant.py:ro
+      - ./python/chat/__init__.py:/app/chat/__init__.py:ro
+      - ./docs/GUIA_USUARIO_LLM.md:/help/GUIA_USUARIO_LLM.md:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["127.0.0.1:${NEXO_HELP_PORT:-18081}:8081"]
+    networks: [egress]
+    mem_limit: 256m
+    pids_limit: 64
+    logging:
+      driver: local
+      options:
+        max-size: 1m
+        max-file: "2"

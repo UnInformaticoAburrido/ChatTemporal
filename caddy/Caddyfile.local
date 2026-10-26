@@ -5,5 +5,14 @@
 }
 
 http://:8080 {
+	handle /help-api/question {
+		reverse_proxy help:8081 {
+			header_up -Authorization
+			header_up -Cookie
+			transport http {
+				response_header_timeout 95s
+			}
+		}
+	}
 	import /etc/caddy/routes.caddy
 }
