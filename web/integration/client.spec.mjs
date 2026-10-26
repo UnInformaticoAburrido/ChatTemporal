@@ -177,7 +177,8 @@ test('dos dispositivos reales: bootstrap firmado, permiso residual, transferenci
     const b = observe(target);
     await expect(main.getByRole('status')).toHaveText('Acceso confirmado');
     await expect(target.getByRole('heading', { name: 'Ajustes de usuario' })).toBeVisible();
-    expect(target.url()).toBe(process.env.CHAT_E2E_BASE_URL + '/');
+    // La navegación conserva solo el apartado público, nunca credenciales de acceso.
+    await expect(target).toHaveURL(process.env.CHAT_E2E_BASE_URL + '/#cuenta');
     expect(await target.evaluate(() => window.opener === null)).toBe(true);
     const revoked = await source.context().request.get('/api/v1/users/me', { headers: { Authorization: 'Bearer ' + account.access } });
     expect(revoked.status()).toBe(401);
