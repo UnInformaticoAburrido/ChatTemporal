@@ -50,7 +50,7 @@
     </section>
     <section id="faq" class="layout faq-page" aria-labelledby="faq-title" hidden>
       <h1 id="faq-title" tabindex="-1">Preguntas frecuentes</h1>
-      <p class="lead">Qué necesitas para entrar, cómo se protegen tus mensajes y qué hace cada opción. Si es tu primera vez, empieza por las diferencias entre recuperar tu cuenta y abrir tus mensajes.</p>
+      <p class="lead">Encuentra ayuda para entrar, hablar con otra persona y cambiar tus datos. Empieza por «Primeros pasos». Si no encuentras tu caso, describe qué estabas intentando hacer y qué aviso aparece, sin compartir contraseñas ni palabras de acceso.</p>
       <nav class="faq-topics" aria-label="Temas de ayuda">
         <a href="#preguntas/claves">Abrir mis claves</a><a href="#preguntas/primera-vez">Primeros pasos</a><a href="#preguntas/invitaciones">Invitar a alguien</a><a href="#preguntas/privacidad">Dónde quedan los mensajes</a>
       </nav>
@@ -79,14 +79,14 @@
       <details id="faq-invitaciones" class="faq-answer">
         <summary>¿Cómo invito a alguien y qué código debo compartir?</summary>
         <p>En Mi cuenta, pulsa «Obtener código para invitar». Antes debes verificar tu correo y preparar las claves de conversación. Verás dos códigos: uno para conversaciones con historial y otro para conversaciones efímeras.</p>
-        <p>Para hablar sin guardar historial remoto, copia <strong>la invitación efímera</strong> y compártela con la otra persona por el medio que elijas. Esa persona debe entrar en Conversaciones, pulsar «Nueva conversación», pegar el código completo y confirmar. El formulario actual solo admite invitaciones efímeras; si pegas la de historial, te pedirá la otra.</p>
+        <p>Para hablar sin guardar mensajes guardados fuera de tu dispositivo, copia <strong>la invitación efímera</strong> y compártela con la otra persona por el medio que elijas. Esa persona debe entrar en Conversaciones, pulsar «Nueva conversación», pegar el código completo y confirmar. El formulario actual solo admite invitaciones efímeras; si pegas la de historial, te pedirá la otra.</p>
         <p>Cuando alguien utiliza tu código, aparecerá una conversación pendiente. Si no la ves, pulsa «Actualizar conversaciones». El anfitrión, que es quien compartió su código, puede aceptarla desde las opciones de esa conversación.</p>
         <p>«Regenerar» cambia <strong>las dos invitaciones</strong>. Los códigos antiguos dejan de servir para nuevas conversaciones, aunque las conversaciones ya creadas continúan existiendo. Comparte de nuevo el código si la otra persona todavía no lo había utilizado.</p>
       </details>
       <details id="faq-privacidad" class="faq-answer">
         <summary>¿Dónde quedan los mensajes? ¿Qué significa «efímera» o «con historial»?</summary>
         <p><strong>Conversación efímera:</strong> el servidor transmite el mensaje cifrado de forma temporal, pero no lo guarda como historial. Ambos usuarios deben estar conectados. Los mensajes que ves permanecen en la memoria de esta página; se pierden al recargar, cerrar la página o cerrar la sesión. Una copia de claves permite descifrar mensajes, pero no contiene una copia de las conversaciones.</p>
-        <p><strong>Conversación con historial:</strong> el servidor conserva el contenido cifrado según los plazos de retención de la aplicación. Si vuelves a entrar y abres la misma clave privada, podrás consultar los mensajes que todavía estén disponibles. El servidor no recibe el texto descifrado, aunque sí gestiona datos necesarios para entregar los mensajes, como la conversación, la hora y el estado de entrega.</p>
+        <p><strong>Conversación con historial:</strong> el servidor conserva el contenido cifrado durante un tiempo limitado. Si vuelves a entrar y abres la misma clave privada, podrás consultar los mensajes que todavía estén disponibles. El servidor no recibe el texto descifrado, aunque sí gestiona datos necesarios para entregar los mensajes, como la conversación, la hora y el estado de entrega.</p>
         <p>Las conversaciones nuevas del formulario «Nueva conversación» usan el modo efímero. Las conversaciones anteriores con historial conservan ese modo. Si el anfitrión elige «Guardar mensajes futuros» y confirma, los mensajes posteriores pasarán a guardarse cifrados; los mensajes efímeros anteriores no se suben automáticamente.</p>
       </details>
       <details id="faq-aceptacion" class="faq-answer">
@@ -105,7 +105,31 @@
         <summary>¿Qué pasa al cambiar de apartado, recargar o cerrar sesión?</summary>
         <p>Cambiar entre Mi cuenta, Conversaciones y Preguntas frecuentes no cierra tu sesión ni bloquea las claves que ya has abierto. Puedes consultar esta ayuda y volver al mismo chat desde la barra superior.</p>
         <p>Recargar o cerrar la página elimina los datos que solo estaban en su memoria. Tendrás que iniciar sesión de nuevo con tu correo y tus 24 palabras, y abrir el archivo .chatkey para leer mensajes cifrados. El historial efímero de esa página no se recupera desde el servidor.</p>
-        <p>«Bloquear clave» retira la clave privada de esta página y vacía el chat local, pero no elimina tu cuenta. «Cerrar sesión» termina tu acceso desde la página y retira también las claves abiertas. Conserva antes tus copias de seguridad.</p>
+        <p>«Bloquear clave» bloquea el acceso a tus mensajes en esta página y vacía el chat local, pero no elimina tu cuenta. «Cerrar sesión» termina tu acceso desde la página y retira también las claves abiertas. Conserva antes tus copias de seguridad.</p>
+      </details>
+      <details id="faq-correo" class="faq-answer">
+        <summary>No recibo el correo o el código no funciona. ¿Qué hago?</summary>
+        <p>Comprueba la dirección en Mi cuenta y revisa la carpeta de correo no deseado. Puedes corregir la dirección con «Editar perfil» y pedir «Enviar otro código». Usa el código del correo más reciente. Si aparece un aviso de espera, espera antes de pedir otro.</p>
+        <p>El código confirma que el correo es tuyo. Es distinto del código para invitar y de las 24 palabras para entrar. <a href="#preguntas/primera-vez">Ver los primeros pasos</a>.</p>
+      </details>
+      <details id="faq-perfil" class="faq-answer">
+        <summary>¿Cómo cambio mi nombre o correo?</summary>
+        <p>Abre Mi cuenta, pulsa «Editar perfil», cambia los datos y pulsa «Guardar cambios». El nombre admite entre 3 y 32 letras sin acentos, números o guiones bajos; no admite espacios. Si cambias el correo, confirma la nueva dirección con el código que recibas.</p>
+      </details>
+      <details id="faq-acceso" class="faq-answer">
+        <summary>¿Cómo vuelvo a entrar? ¿Y si he perdido mis 24 palabras?</summary>
+        <p>Pulsa «Iniciar sesión» y escribe tu correo y las 24 palabras en el orden en que las guardaste. Puedes pegar todas las palabras en la primera casilla. El archivo .chatkey y su contraseña sirven para abrir los mensajes después de entrar; no sustituyen esas palabras.</p>
+        <p>Si has perdido las palabras, busca la copia que guardaste al registrarte. La pantalla de acceso no ofrece recuperarlas por correo. Crear otra cuenta no recupera la anterior. Si accedes desde una aplicación principal conectada a Nexo, utiliza su opción de acceso. <a href="#preguntas/diferencias">Distinguir los datos que necesitas</a>.</p>
+      </details>
+      <details id="faq-notificaciones" class="faq-answer">
+        <summary>¿Cómo activo los avisos de mensajes? ¿Qué muestran?</summary>
+        <p>En Mi cuenta, abre «Gestionar notificaciones» y pulsa «Activar notificaciones». Acepta el permiso del navegador si lo solicita. Los avisos indican que hay actividad, sin mostrar nombres ni mensajes.</p>
+        <p>Si los bloqueaste, cambia el permiso en los ajustes del navegador. «Desactivar en este navegador» deja de enviarlos a ese navegador. Al cerrar sesión dejan de llegar; cerrar solo la pestaña puede mantenerlos. Un aviso no permite recuperar los mensajes de una conversación sin historial que ya se hayan perdido.</p>
+      </details>
+      <details id="faq-conversaciones" class="faq-answer">
+        <summary>¿Cómo elijo una conversación o dejo de escribir en ella?</summary>
+        <p>En Conversaciones, pulsa el nombre de la conversación que quieras abrir. Si faltan conversaciones, pulsa «Actualizar conversaciones». Para escribir necesitas haber abierto tu copia de claves. Escribe el texto y pulsa Enviar; en un teclado, Intro envía y Mayúsculas + Intro añade otra línea.</p>
+        <p>«Cerrar conversación», dentro de sus opciones, impide seguir enviando mensajes en ella. No significa cerrar sesión ni garantiza borrar los mensajes ya recibidos por la otra persona. <a href="#preguntas/entrega">Resolver problemas al enviar</a>.</p>
       </details>
     </section>
     <noscript>Activa JavaScript para entrar y conversar en Nexo.</noscript>

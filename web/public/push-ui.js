@@ -11,7 +11,7 @@ export async function mountPush({ api, container, run, notify }) {
     <button class="primary" id="enable-push" type="button" disabled>Activar notificaciones</button>
     <button class="secondary" id="disable-push" type="button" disabled>Desactivar en este navegador</button>
     <button class="secondary" id="retry-push" type="button" hidden>Consultar de nuevo</button>
-    <p class="footnote">Desactivar elimina la suscripción de este navegador. El permiso del sistema se cambia en sus ajustes. Cerrar sesión revoca la entrega; cerrar la pestaña conserva los avisos.</p>`;
+    <p class="footnote">Desactivar elimina la suscripción de este navegador. El permiso del sistema se cambia en sus ajustes. Cerrar sesión detiene los avisos; cerrar solo la pestaña puede mantenerlos. <a href="#preguntas/notificaciones">Ayuda con las notificaciones</a></p>`;
   const state = container.querySelector('#push-state');
   const enable = container.querySelector('#enable-push'), disable = container.querySelector('#disable-push'), retry = container.querySelector('#retry-push');
   function update() {

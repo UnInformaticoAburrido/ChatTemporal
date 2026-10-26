@@ -151,7 +151,7 @@ function showAccess(mode = 'register') {
     </form>
     <p class="access-switch">${recovering ? '¿Nuevo en Nexo?' : '¿Ya tienes cuenta?'} <button class="nav-link" type="button" id="${recovering ? 'register-tab' : 'recover-tab'}">${recovering ? 'Crear una cuenta' : 'Iniciar sesión'}</button></p>
     <details class="alternative-access"><summary>Otras formas de acceso</summary><button class="secondary" type="button" id="bootstrap-access">Acceder desde la aplicación principal</button></details>
-    <p class="footnote">La sesión se conserva mientras esta página permanezca abierta. Si la recargas o cierras, tendrás que volver a acceder.</p>
+    <p class="footnote">La sesión se conserva mientras esta página permanezca abierta. Si la recargas o cierras, tendrás que volver a acceder. <a href="#preguntas/acceso">Ayuda para entrar en tu cuenta</a></p>
   `);
   accessDialog.classList.toggle('recovery-dialog', recovering);
   const switchButton = screen.querySelector(recovering ? '#register-tab' : '#recover-tab');
@@ -269,13 +269,13 @@ function showAccount() {
     <section id="profile-editor" class="settings-section" hidden><h3>Edita tu identidad</h3>
       <form id="profile-form"><label for="profile-nick">Nombre de usuario</label><input id="profile-nick" name="nick" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]{3,32}" autocomplete="username">
       <label for="profile-email">Correo electrónico</label><input id="profile-email" name="email" type="email" required autocomplete="email">
-      <p class="muted">Si cambias el correo, tendrás que verificar la nueva dirección.</p><button class="primary" type="submit">Guardar cambios</button></form></section>
-    ${!user.email_verified ? `<p class="muted">Hemos enviado un código de verificación al correo de tu cuenta. Copia ese código y pégalo aquí para confirmar que la dirección te pertenece. No es una invitación ni una de tus 24 palabras. Si no llega, revisa el buzón de pruebas en una instalación local o solicita otro código.</p>
+      <p class="muted">Si cambias el correo, tendrás que confirmar la nueva dirección. <a href="#preguntas/perfil">Ayuda para cambiar tus datos</a></p><button class="primary" type="submit">Guardar cambios</button></form></section>
+    ${!user.email_verified ? `<p class="muted">Hemos enviado un código de verificación al correo de tu cuenta. Copia ese código y pégalo aquí para confirmar que la dirección te pertenece. No es una invitación ni una de tus 24 palabras. Si no llega, revisa el buzón de pruebas en una instalación local o solicita otro código. <a href="#preguntas/correo">No recibo el correo o el código falla</a></p>
       <form id="verify-form"><label for="code">Código de verificación</label><input id="code" name="code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="128" required>
       <button class="primary" type="submit">Verificar correo</button></form>
       <button class="secondary" id="resend" type="button">Enviar otro código</button>` :
       `<section id="invitations-panel" aria-label="Invitar a conversar">
-        <div class="section-heading"><div><h3>Códigos de invitación</h3><p class="muted">Copia la invitación efímera y compártela con la persona con la que quieras hablar. Esa persona debe pegarla en «Conversaciones → Nueva conversación». El código con historial corresponde al modo que guarda mensajes cifrados en el servidor.</p></div>
+        <div class="section-heading"><div><h3>Códigos de invitación</h3><p class="muted">Copia la invitación efímera y compártela con la persona con la que quieras hablar. Esa persona debe pegarla en «Conversaciones → Nueva conversación». La invitación efímera sirve para hablar sin guardar historial. <a href="#preguntas/invitaciones">Cómo invitar y qué código compartir</a></p></div>
         <button class="secondary" id="invitation-codes" type="button">Obtener código para invitar</button></div>
         <div id="codes"></div></section>
         <section class="settings-section keys-intro"><h3>Claves de conversación</h3><p class="muted">Iniciar sesión recupera tu identidad, pero para leer y escribir mensajes cifrados necesitas abrir tu archivo .chatkey con su contraseña. Si es tu primera vez, aquí podrás crear y descargar esa copia. <a class="help-link" href="#preguntas/claves">Qué es la copia de claves y cómo se usa</a></p><button class="secondary" id="open-keys" type="button">Gestionar claves de conversación</button></section><section id="conversation-home" aria-label="Tus conversaciones" hidden></section><section id="keys-panel" aria-label="Claves de conversación"></section><section class="settings-section"><button class="secondary" id="open-push" type="button">Gestionar notificaciones</button><section id="push-panel" aria-label="Notificaciones"></section></section>`}
