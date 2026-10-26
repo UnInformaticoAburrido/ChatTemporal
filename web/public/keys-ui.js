@@ -20,7 +20,7 @@ export async function mountKeys({ api, user, container, run, notify, finishHando
     const label = document.createElement('label'); label.htmlFor = 'own-public-key'; label.textContent = 'Tu clave pública';
     const field = document.createElement('textarea'); field.id = 'own-public-key'; field.readOnly = true; field.rows = 2; field.value = value;
     const help = document.createElement('p'); help.className = 'muted';
-    help.textContent = 'Esta cadena es la parte pública de tu identidad de cifrado. La aplicación la utiliza para que otros puedan enviarte mensajes que solo tú puedes abrir. No es una invitación y no se pega en «Nueva conversación». Para conectar con alguien, comparte uno de los códigos de Mi cuenta.';
+    help.textContent = 'Este texto es tu clave pública: un dato que la aplicación comparte para recibir mensajes protegidos. La aplicación la utiliza para que otros puedan enviarte mensajes que solo tú puedes abrir. No es una invitación y no se pega en «Nueva conversación». Para conectar con alguien, comparte uno de los códigos de Mi cuenta.';
     const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'secondary'; copy.textContent = 'Copiar mi clave pública';
     copy.onclick = () => {
       if (!alive() || !field.isConnected) return;

@@ -394,9 +394,9 @@ function showAccount() {
       timer = setTimeout(() => reject(new Error('timeout')), 5000);
     })]).catch(() => { localPushFailed = true; }).finally(() => clearTimeout(timer));
     try { await api.logout(); }
-    catch { await cleanup; user = null; showAccess('recover'); message('Has salido de esta página. No hemos podido confirmar el cierre en el servidor; recuperar el acceso revocará la sesión anterior.', true); return; }
+    catch { await cleanup; user = null; showAccess('recover'); message('Has salido de esta página. No hemos podido confirmar el cierre en el servidor; volver a entrar cerrará la sesión anterior.', true); return; }
     await cleanup;
-    user = null; showAccess('recover'); message(localPushFailed ? 'Sesión cerrada y entrega de avisos revocada. No se pudo confirmar la baja del navegador; comprueba sus ajustes de notificaciones.' : 'Sesión cerrada.', localPushFailed);
+    user = null; showAccess('recover'); message(localPushFailed ? 'Sesión cerrada y avisos desactivados. No se pudo confirmar la baja del navegador; comprueba sus ajustes de notificaciones.' : 'Sesión cerrada.', localPushFailed);
   });
 }
 function showWelcome() {
@@ -441,7 +441,7 @@ document.querySelector('#privacy-link').onclick = () => showInfo('Tu privacidad,
 document.querySelector('#how-link').onclick = () => showInfo('Cómo funciona Nexo', [
   '01 · Crea tu identidad. Elige un apodo y un correo. Guarda las 24 palabras en su orden: las necesitarás junto al correo para volver a entrar. Después copia el código del correo de verificación en Mi cuenta.',
   '02 · Prepara tus mensajes. Crea el archivo de claves .chatkey, protégelo con una contraseña y comprueba que puedes abrirlo. La copia permite descifrar mensajes; las 24 palabras permiten recuperar la cuenta. Son cosas distintas y necesitas conservar ambas.',
-  '03 · Conecta con otra persona. Comparte la invitación efímera de Mi cuenta o pega la suya en Nueva conversación. El anfitrión acepta la conversación desde sus opciones. En modo efímero ambos necesitáis el chat conectado y las claves abiertas; los mensajes de la página se pierden al cerrarla o recargarla.',
+  '03 · Conecta con otra persona. Comparte la invitación efímera de Mi cuenta o pega la suya en Nueva conversación. La persona que compartió la invitación acepta la conversación desde sus opciones. En modo efímero ambos necesitáis el chat conectado y las claves abiertas; los mensajes de la página se pierden al cerrarla o recargarla.',
 ]);
 document.querySelector('#close-info').onclick = () => document.querySelector('#info-dialog').close();
 document.querySelector('#mobile-privacy').onclick = document.querySelector('#privacy-link').onclick;
