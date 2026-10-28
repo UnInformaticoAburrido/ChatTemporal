@@ -10,7 +10,7 @@ FROM python:3.13.15-slim-trixie@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.lock /tmp/requirements.lock
-RUN python -m pip install --no-cache-dir --upgrade pip==26.2.0 \
+RUN python -m pip install --no-cache-dir --upgrade pip==26.2.2 \
     && python -m pip install --no-cache-dir -r /tmp/requirements.lock
 # El código se consume del bind mount ./python:/app; dependencias fuera de /app.
 USER 1000:1000
