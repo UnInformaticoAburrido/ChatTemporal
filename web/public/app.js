@@ -252,10 +252,21 @@ function showPhrase(phrase) {
   show(`<p class="eyebrow">PASO 2 · GUARDA TU ACCESO</p><h2 tabindex="-1">Estas palabras son solo tuyas.</h2>
     <p class="muted">Guárdalas en un lugar seguro y en este orden. Solo se muestran al crear tu cuenta. Cualquiera que las tenga junto a tu correo puede recuperar tu acceso.</p>
     <ol id="words" class="words" aria-label="Frase de recuperación"></ol>
+    <button class="secondary" id="download-words" type="button">Descargar mis palabras numeradas</button>
+    <p class="footnote">El archivo contiene tus palabras sin contraseña. Guárdalo en un lugar privado y no lo compartas. Descargarlo no marca automáticamente la confirmación de abajo.</p>
     <form id="saved-form"><label class="check"><input type="checkbox" name="saved" required> He guardado mis 24 palabras en un lugar seguro.</label>
     <button class="primary" type="submit">Continuar a la verificación <span aria-hidden="true">→</span></button></form>`);
   const words = screen.querySelector('#words');
   phrase.split(' ').forEach(word => { const item = document.createElement('li'); item.textContent = word; words.append(item); });
+  screen.querySelector('#download-words').onclick = () => {
+    const numbered = phrase.split(' ').map((word, index) => `${index + 1}. ${word}`).join('\n');
+    const content = `Nexo — palabras de acceso\n\nGuarda estas palabras en este orden. No compartas este archivo.\n\n${numbered}\n`;
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'nexo-palabras-de-acceso.txt';
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   bindForm('#saved-form', async () => { showAccount(); });
 }
 function showAccount() {
@@ -270,7 +281,7 @@ function showAccount() {
       <form id="profile-form"><label for="profile-nick">Nombre de usuario</label><input id="profile-nick" name="nick" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]{3,32}" autocomplete="username">
       <label for="profile-email">Correo electrónico</label><input id="profile-email" name="email" type="email" required autocomplete="email">
       <p class="muted">Si cambias el correo, tendrás que confirmar la nueva dirección. <a href="#preguntas/perfil">Ayuda para cambiar tus datos</a></p><button class="primary" type="submit">Guardar cambios</button></form></section>
-    ${!user.email_verified ? `<p class="muted">Hemos enviado un código de verificación al correo de tu cuenta. Copia ese código y pégalo aquí para confirmar que la dirección te pertenece. No es una invitación ni una de tus 24 palabras. Si no llega, revisa el buzón de pruebas en una instalación local o solicita otro código. <a href="#preguntas/correo">No recibo el correo o el código falla</a></p>
+    ${!user.email_verified ? `<p class="muted">Hemos enviado un código de verificación al correo de tu cuenta. Copia ese código y pégalo aquí para confirmar que la dirección te pertenece. No es una invitación ni una de tus 24 palabras. Si no llega, revisa la carpeta de correo no deseado y comprueba que escribiste bien tu dirección. Después puedes solicitar otro código. <a href="#preguntas/correo">No recibo el correo o el código falla</a></p>
       <form id="verify-form"><label for="code">Código de verificación</label><input id="code" name="code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="128" required>
       <button class="primary" type="submit">Verificar correo</button></form>
       <button class="secondary" id="resend" type="button">Enviar otro código</button>` :

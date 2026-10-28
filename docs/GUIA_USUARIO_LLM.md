@@ -28,6 +28,8 @@ generada sea infalible. No describas procedimientos internos o formas de eludir 
 - Nombre: Crear cuenta.
 - Descripción: registra un nombre de usuario y un correo; entrega 24 palabras para volver a entrar.
 - Efecto: el usuario debe guardar las palabras en su orden y confirmar su correo.
+- Opción: Descargar mis palabras numeradas guarda un archivo de texto con las 24 palabras,
+  una por línea. El archivo no tiene contraseña y no se debe compartir.
 - Ayuda: /#preguntas/primera-vez
 
 ### Entrar
