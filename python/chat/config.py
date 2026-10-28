@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from chat.mail_config import load_mail_config
+
 
 class RateRule(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -115,10 +117,17 @@ def load_settings() -> Settings:
             origin = f"http://{host}:{port}"
             if origin not in settings.allowed_origins:
                 settings.allowed_origins.append(origin)
+    mail = load_mail_config()
+    if mail is not None:
+        settings.email_from = mail.sender
     return settings
 
 
 def read_secret(name: str) -> str:
+    if name == "SMTP_URL":
+        mail = load_mail_config()
+        if mail is not None:
+            return mail.smtp_url()
     return Path(os.environ[name + "_FILE"]).read_text().strip()
 
 

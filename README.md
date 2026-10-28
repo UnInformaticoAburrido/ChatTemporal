@@ -426,3 +426,11 @@ Producción necesita dominio/DNS, SMTP, claves públicas de bootstrap y secretos
 reales, además de superar todos los niveles y puertas de calidad. No basta con
 cambiar `APP_ENV`. La configuración suministrada falla deliberadamente en
 producción mientras contenga valores de ejemplo.
+
+## Configuración privada del correo real
+
+Copia `python/config/mail.example.toml` a `python/config/mail.local.toml` y completa
+el servidor SMTP, remitente y credenciales en la copia local. La plantilla se versiona;
+la copia local está excluida de Git y de los contextos de construcción de Docker.
+Consulta [la guía de configuración del correo](docs/CORREO_REAL.md) para activar
+el proveedor y aplicar los cambios.

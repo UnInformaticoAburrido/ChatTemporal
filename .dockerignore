@@ -7,3 +7,5 @@ backups
 artifacts
 **/__pycache__
 **/.pytest_cache
+
+python/config/mail.local.toml

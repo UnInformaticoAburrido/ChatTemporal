@@ -1,0 +1,13 @@
+# Copia este archivo como mail.local.toml y edita solo la copia local.
+# La copia local está excluida de Git. No escribas credenciales en esta plantilla.
+# Activa el envío real cuando hayas completado TODOS los campos.
+enabled = false
+host = "smtp.example.invalid"
+port = 587
+# "starttls" para el puerto 587; "tls" para TLS directo, normalmente 465.
+security = "starttls"
+sender = "nexo@example.invalid"
+username = ""
+# Credencial SMTP o contraseña de aplicación del proveedor, no del destinatario.
+# Comillas simples TOML permiten escribir símbolos sin codificación de URL.
+password = ''
