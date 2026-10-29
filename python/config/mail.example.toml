@@ -1,13 +1,17 @@
-# Copia este archivo como mail.local.toml y edita solo la copia local.
-# La copia local está excluida de Git. No escribas credenciales en esta plantilla.
-# Activa el envío real cuando hayas completado TODOS los campos.
+# Copia como mail.local.toml. Edita solo esa copia, excluida de Git y Docker.
 enabled = false
-host = "smtp.example.invalid"
+host = "smtp.gmail.com"
 port = 587
-# "starttls" para el puerto 587; "tls" para TLS directo, normalmente 465.
+# "starttls" normalmente en 587; "tls" para TLS directo, normalmente 465.
 security = "starttls"
-sender = "nexo@example.invalid"
-username = ""
-# Credencial SMTP o contraseña de aplicación del proveedor, no del destinatario.
-# Comillas simples TOML permiten escribir símbolos sin codificación de URL.
-password = ''
+sender = "usuario@gmail.com"
+
+# OAuth2 de Gmail: no se utiliza una contraseña SMTP.
+auth_method = "oauth2"
+client_id = ""
+client_secret = ""
+refresh_token = ""
+
+# Para SMTP tradicional, cambia auth_method a "password", elimina los tres
+# campos OAuth2 anteriores y añade username y password con tus datos privados.
+# La configuración antigua sin auth_method sigue usando contraseña.
